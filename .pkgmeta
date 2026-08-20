@@ -1,0 +1,13 @@
+package-as: BetterBeReady
+
+ignore:
+  - .github
+  - tests
+  - README.md
+  - "*.png"
+  - "**/*.png"
+  - .gitignore
+  - .pkgmeta
+
+enable-nolib-creation: no
+

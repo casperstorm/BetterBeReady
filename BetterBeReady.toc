@@ -1,0 +1,19 @@
+## Interface: 120100
+## Interface-Retail: 120100
+## Title: BetterBeReady
+## Notes: Personal readiness trackers for Bloodlust, battle res charges, and combat time
+## Author: casperstorm
+## Version: @project-version@
+## SavedVariables: BetterBeReadyDB
+## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
+## Category: Combat
+## AllowAddOnTableAccess: 1
+## X-Curse-Project-ID: 1660956
+
+BetterBeReady.lua
+Utils.lua
+TrackerFrame.lua
+Trackers\Bloodlust.lua
+Trackers\BattleRes.lua
+Trackers\CombatTimer.lua
+Config.lua
