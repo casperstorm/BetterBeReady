@@ -17,10 +17,13 @@ function BBR:IsSecretTable(value)
 end
 
 function BBR:GetReadableField(value, key)
-    if self:IsSecretTable(value) then
+    if value == nil then
         return nil, false
     end
 
+    -- A table can be marked secret while still exposing fields documented as
+    -- NeverSecret. Probe the requested field itself instead of rejecting the
+    -- whole table; pcall and the value-level checks keep secret fields safe.
     local ok, field = pcall(function()
         return value[key]
     end)

@@ -108,6 +108,10 @@ function tracker:StopBloodlustMusic()
 end
 
 function tracker:StartBloodlustMusic()
+    if BBR.nativeBloodlustMusicAuraSoundActive then
+        return
+    end
+
     local settings = BBR:GetTrackerSettings(self.key)
     if not (settings and settings.enabled and settings.musicTrack ~= "") then
         return
@@ -148,6 +152,7 @@ function tracker:OnMusicSelectionChanged()
 end
 
 function tracker:OnEnabledChanged(enabled)
+    BBR:RefreshBloodlustMusicAuraSounds()
     if not enabled then
         self:SetBloodlustMusicActive(false)
     elseif self.status == "ACTIVE" then
@@ -225,7 +230,26 @@ function tracker:IsPrimalRageSpell(spellID, spellName)
     return primalRageName and spellName == primalRageName
 end
 
+function tracker:FindPrimalRagePetActionSlot()
+    self.primalRagePetActionSlot = nil
+    if not GetPetActionInfo then
+        return nil
+    end
+
+    for slot = 1, (_G.NUM_PET_ACTION_SLOTS or 10) do
+        local ok, name, _, _, _, _, _, spellID = pcall(GetPetActionInfo, slot)
+        if ok and self:IsPrimalRageSpell(spellID, name) then
+            self.primalRagePetActionSlot = slot
+            return slot
+        end
+    end
+
+    return nil
+end
+
 function tracker:FindPrimalRageSpell()
+    self:FindPrimalRagePetActionSlot()
+
     -- Command Pet's live override reliably tells us whether the active Hunter
     -- pet provides Primal Rage, even when the pet spellbook query is stale.
     if C_Spell and C_Spell.GetOverrideSpell then
@@ -309,34 +333,27 @@ end
 
 function tracker:PrintDebug()
     print(string.format(
-        "BetterBeReady BL: spellID=%s, available=%s, status=%s",
+        "BetterBeReady BL: spellID=%s, petActionSlot=%s, available=%s, status=%s, cooldownActive=%s",
         tostring(self.spellID),
+        tostring(self.primalRagePetActionSlot),
         tostring(self.spellAvailable),
-        tostring(self.status)
+        tostring(self.status),
+        tostring(self.cooldownActive)
     ))
 end
 
-function tracker:SetSpellCooldown()
-    if not (C_Spell and C_Spell.GetSpellCooldown) then
-        self.cooldownActive = nil
-        BBR:ClearTrackerCooldown(self)
-        return
-    end
-
-    local ok, cooldownInfo = pcall(C_Spell.GetSpellCooldown, self.spellID)
-    if not ok or not cooldownInfo then
-        self.cooldownActive = nil
-        BBR:ClearTrackerCooldown(self)
-        return
-    end
-
+function tracker:ApplySpellCooldownInfo(cooldownInfo)
     -- isActive is NeverSecret in SpellCooldownInfo, so this remains safe while
     -- the timing fields are passed directly to Blizzard's cooldown widget.
     local isActive, activeReadable = BBR:GetReadableField(cooldownInfo, "isActive")
-    if activeReadable and type(isActive) == "boolean" then
-        self.cooldownActive = isActive
-    else
-        self.cooldownActive = nil
+    if not activeReadable or type(isActive) ~= "boolean" then
+        return false
+    end
+
+    self.cooldownActive = isActive
+    if not isActive then
+        BBR:ClearTrackerCooldown(self)
+        return true
     end
 
     local applied = pcall(function()
@@ -347,9 +364,62 @@ function tracker:SetSpellCooldown()
         )
     end)
     if not applied then
-        self.cooldownActive = nil
         BBR:ClearTrackerCooldown(self)
     end
+    return true
+end
+
+function tracker:ApplyPetActionCooldown()
+    local slot = self.primalRagePetActionSlot
+    if not (slot and GetPetActionCooldown) then
+        return false
+    end
+
+    local ok, startTime, duration = pcall(GetPetActionCooldown, slot)
+    if not ok
+        or BBR:IsSecretValue(startTime)
+        or BBR:IsSecretValue(duration)
+        or type(startTime) ~= "number"
+        or type(duration) ~= "number"
+    then
+        return false
+    end
+
+    self.cooldownActive = startTime > 0 and duration > 0
+    if self.cooldownActive then
+        local applied = pcall(function()
+            self.frame.cooldown:SetCooldown(startTime, duration)
+        end)
+        if not applied then
+            BBR:ClearTrackerCooldown(self)
+        end
+    else
+        BBR:ClearTrackerCooldown(self)
+    end
+    return true
+end
+
+function tracker:SetSpellCooldown()
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local spellIDs = { self.spellID }
+        if self:IsPrimalRageSpell(self.spellID, self:GetSpellName(self.spellID)) then
+            spellIDs[#spellIDs + 1] = self.hunterCommandPetSpellID
+        end
+
+        for _, spellID in ipairs(spellIDs) do
+            local ok, cooldownInfo = pcall(C_Spell.GetSpellCooldown, spellID)
+            if ok and cooldownInfo and self:ApplySpellCooldownInfo(cooldownInfo) then
+                return
+            end
+        end
+    end
+
+    if self:ApplyPetActionCooldown() then
+        return
+    end
+
+    self.cooldownActive = nil
+    BBR:ClearTrackerCooldown(self)
 end
 
 function tracker:SetLockoutCooldown(aura)
@@ -452,13 +522,24 @@ function tracker:Create()
     self.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     self.eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     self.eventFrame:RegisterEvent("SPELLS_CHANGED")
+    self.eventFrame:RegisterEvent("PET_BAR_UPDATE")
+    self.eventFrame:RegisterEvent("PET_BAR_UPDATE_COOLDOWN")
+    self.eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     self.eventFrame:SetScript("OnEvent", function(_, event)
-        if event == "SPELLS_CHANGED" or event == "UNIT_PET" or event == "PLAYER_ENTERING_WORLD" then
+        if event == "SPELLS_CHANGED"
+            or event == "UNIT_PET"
+            or event == "PET_BAR_UPDATE"
+            or event == "PLAYER_ENTERING_WORLD"
+        then
             self:SelectBloodlustSpell()
+        end
+        if event == "PLAYER_REGEN_ENABLED" and BBR.bloodlustMusicAuraSoundRefreshPending then
+            BBR:RefreshBloodlustMusicAuraSounds()
         end
         self:Update()
     end)
 
+    BBR:RefreshBloodlustMusicAuraSounds()
     self:Update()
 end
 

@@ -1,5 +1,7 @@
 local _, BBR = ...
 
+local MUSIC_ROOT = "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\"
+
 BBR.bloodlustMusicTracks = {
     { id = "sounds\\GasHero.ogg", title = "Manuel - GAS GAS GAS" },
     { id = "sounds\\90sHero.ogg", title = "Max Coveri - Running in the 90's" },
@@ -93,10 +95,74 @@ function BBR:PreviewBloodlustMusic()
         return
     end
 
-    local soundPath = "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\" .. track.id
+    local soundPath = MUSIC_ROOT .. track.id
     local callOK, played, soundHandle = pcall(PlaySoundFile, soundPath, "Master")
     if callOK and played then
         self.musicPreviewSoundHandle = soundHandle
+    end
+end
+
+function BBR:ClearBloodlustMusicAuraSounds()
+    local removeSound = C_UnitAuras
+        and (C_UnitAuras.RemoveAuraSound or C_UnitAuras.RemoveAuraAppliedSound)
+    if removeSound then
+        for _, auraSoundID in ipairs(self.bloodlustMusicAuraSoundIDs or {}) do
+            pcall(removeSound, auraSoundID)
+        end
+    end
+
+    self.bloodlustMusicAuraSoundIDs = nil
+    self.nativeBloodlustMusicAuraSoundActive = false
+end
+
+function BBR:RefreshBloodlustMusicAuraSounds()
+    if InCombatLockdown and InCombatLockdown() then
+        self.bloodlustMusicAuraSoundRefreshPending = true
+        return
+    end
+
+    self.bloodlustMusicAuraSoundRefreshPending = false
+    self:ClearBloodlustMusicAuraSounds()
+
+    local settings = self:GetTrackerSettings("bloodlust")
+    local tracker = self.trackers.bloodlust
+    local track = settings and self:GetBloodlustMusicTrack(settings.musicTrack)
+    if not (settings and settings.enabled and tracker and track and C_UnitAuras) then
+        return
+    end
+
+    local addSound = C_UnitAuras.AddAuraSound
+    local legacyAddSound = C_UnitAuras.AddAuraAppliedSound
+    local trigger = Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added
+    if not ((type(addSound) == "function" and trigger ~= nil)
+        or type(legacyAddSound) == "function")
+    then
+        return
+    end
+
+    local soundPath = MUSIC_ROOT .. track.id
+    local registrations = {}
+    for _, spellID in ipairs(tracker.bloodlustBuffSpellIDs) do
+        local sound = {
+            unitToken = "player",
+            spellID = spellID,
+            soundFileName = soundPath,
+            outputChannel = "Master",
+        }
+        local callOK, auraSoundID
+        if type(addSound) == "function" and trigger ~= nil then
+            callOK, auraSoundID = pcall(addSound, trigger, sound)
+        else
+            callOK, auraSoundID = pcall(legacyAddSound, sound)
+        end
+        if callOK and auraSoundID ~= nil then
+            registrations[#registrations + 1] = auraSoundID
+        end
+    end
+
+    if #registrations > 0 then
+        self.bloodlustMusicAuraSoundIDs = registrations
+        self.nativeBloodlustMusicAuraSoundActive = true
     end
 end
 
@@ -108,6 +174,7 @@ function BBR:SetBloodlustMusicTrack(trackID)
 
     self:StopBloodlustMusicPreview()
     settings.musicTrack = self:GetBloodlustMusicTrack(trackID) and trackID or ""
+    self:RefreshBloodlustMusicAuraSounds()
     local tracker = self.trackers.bloodlust
     if tracker and tracker.OnMusicSelectionChanged then
         tracker:OnMusicSelectionChanged()

@@ -2,6 +2,16 @@ local BBR = {}
 local chunk = assert(loadfile("Utils.lua"))
 chunk("BetterBeReady", BBR)
 
+local secretContainer = { isActive = false, duration = "secret" }
+issecrettable = function(value) return value == secretContainer end
+issecretvalue = function(value) return value == "secret" end
+local readableValue, readable = BBR:GetReadableField(secretContainer, "isActive")
+assert(readable == true)
+assert(readableValue == false)
+local hiddenValue, hiddenReadable = BBR:GetReadableField(secretContainer, "duration")
+assert(hiddenReadable == false)
+assert(hiddenValue == nil)
+
 assert(BBR:FormatDuration(0, false) == "0:00")
 assert(BBR:FormatDuration(65.9, false) == "1:05")
 assert(BBR:FormatDuration(65.9, true) == "1:05.9")

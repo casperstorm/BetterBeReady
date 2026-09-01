@@ -411,6 +411,37 @@ BBR.trackers.bloodlust:Update()
 assert(BBR.trackers.bloodlust.spellID == 264667)
 assert(BBR.trackers.bloodlust.status == "READY")
 
+-- Primal Rage can be a pet action even when the generic spell cooldown API
+-- has no entry for it. Fall back to the matching pet action slot.
+GetPetActionInfo = function(slot)
+    if slot == 4 then
+        return "Primal Rage", 12345, false, false, false, false, 264667
+    end
+end
+GetPetActionCooldown = function(slot)
+    assert(slot == 4)
+    return 75, 300, 1
+end
+C_Spell.GetSpellCooldown = function() return nil end
+BBR.trackers.bloodlust:SelectBloodlustSpell()
+BBR.trackers.bloodlust:Update()
+assert(BBR.trackers.bloodlust.primalRagePetActionSlot == 4)
+assert(BBR.trackers.bloodlust.cooldownActive == true)
+assert(BBR.trackers.bloodlust.frame.cooldown.cooldownInfo[1] == 75)
+
+GetPetActionCooldown = function(slot)
+    assert(slot == 4)
+    return 0, 0, 1
+end
+BBR.trackers.bloodlust:Update()
+assert(BBR.trackers.bloodlust.cooldownActive == false)
+assert(BBR.trackers.bloodlust.frame.statusText:GetText() == "READY")
+GetPetActionInfo = nil
+GetPetActionCooldown = nil
+C_Spell.GetSpellCooldown = function()
+    return { startTime = 0, duration = 0, modRate = 1, isActive = false }
+end
+
 -- A non-Ferocity pet makes the tracker unavailable.
 C_Spell.GetOverrideSpell = function(spellID) return spellID end
 BBR.trackers.bloodlust:SelectBloodlustSpell()
@@ -530,6 +561,56 @@ assert(stoppedSounds[#stoppedSounds] == 7002)
 assert(BBR.musicPreviewSoundHandle == nil)
 BBR:SetBloodlustMusicTrack("")
 assert(#playedSounds == 2)
+
+local auraSoundRegistrations = {}
+local removedAuraSoundIDs = {}
+Enum = { UnitAuraSoundTrigger = { Added = 11 } }
+C_UnitAuras.AddAuraSound = function(trigger, sound)
+    auraSoundRegistrations[#auraSoundRegistrations + 1] = {
+        trigger = trigger,
+        sound = sound,
+    }
+    return 8000 + #auraSoundRegistrations
+end
+C_UnitAuras.RemoveAuraSound = function(auraSoundID)
+    removedAuraSoundIDs[#removedAuraSoundIDs + 1] = auraSoundID
+end
+
+BBR:SetBloodlustMusicTrack("sounds\\GasHero.ogg")
+local bloodlustBuffCount = #BBR.trackers.bloodlust.bloodlustBuffSpellIDs
+assert(#auraSoundRegistrations == bloodlustBuffCount)
+assert(auraSoundRegistrations[1].trigger == Enum.UnitAuraSoundTrigger.Added)
+assert(auraSoundRegistrations[1].sound.unitToken == "player")
+assert(auraSoundRegistrations[1].sound.spellID
+    == BBR.trackers.bloodlust.bloodlustBuffSpellIDs[1])
+assert(auraSoundRegistrations[1].sound.soundFileName
+    == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\GasHero.ogg")
+assert(auraSoundRegistrations[1].sound.outputChannel == "Master")
+assert(BBR.nativeBloodlustMusicAuraSoundActive == true)
+
+local playedBeforeNativeFallbackCheck = #playedSounds
+BBR.trackers.bloodlust:StartBloodlustMusic()
+assert(#playedSounds == playedBeforeNativeFallbackCheck)
+
+inCombatLockdown = true
+BBR:SetBloodlustMusicTrack("sounds\\DejaVuHero.ogg")
+assert(BBR.bloodlustMusicAuraSoundRefreshPending == true)
+assert(#removedAuraSoundIDs == 0)
+
+inCombatLockdown = false
+BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(
+    BBR.trackers.bloodlust.eventFrame,
+    "PLAYER_REGEN_ENABLED"
+)
+assert(BBR.bloodlustMusicAuraSoundRefreshPending == false)
+assert(#removedAuraSoundIDs == bloodlustBuffCount)
+assert(#auraSoundRegistrations == bloodlustBuffCount * 2)
+assert(auraSoundRegistrations[bloodlustBuffCount + 1].sound.soundFileName
+    == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\DejaVuHero.ogg")
+
+BBR:SetBloodlustMusicTrack("")
+assert(#removedAuraSoundIDs == bloodlustBuffCount * 2)
+assert(BBR.nativeBloodlustMusicAuraSoundActive == false)
 assert(UISpecialFrames[1] == "BetterBeReadyConfigFrame")
 
 inCombatLockdown = true
