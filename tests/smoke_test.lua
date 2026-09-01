@@ -171,6 +171,21 @@ C_UnitAuras = {
     end,
 }
 
+local itemCounts = {}
+local itemCooldowns = {}
+C_Item = {
+    GetItemCount = function(itemID)
+        return itemCounts[itemID] or 0
+    end,
+    GetItemCooldown = function(itemID)
+        local cooldown = itemCooldowns[itemID]
+        if cooldown then
+            return cooldown.startTime, cooldown.duration, cooldown.enabled
+        end
+        return 0, 0, true
+    end,
+}
+
 local BBR = {}
 for _, file in ipairs({
     "BetterBeReady.lua",
@@ -179,6 +194,7 @@ for _, file in ipairs({
     "Music.lua",
     "Trackers/Bloodlust.lua",
     "Trackers/BattleRes.lua",
+    "Trackers/CombatPotion.lua",
     "Trackers/CombatTimer.lua",
     "Config.lua",
 }) do
@@ -201,13 +217,16 @@ for _, frame in ipairs(allFrames) do
 end
 
 assert(BetterBeReadyDB)
-assert(BetterBeReadyDB.schemaVersion == 6)
-assert(BetterBeReadyDB.trackers.combatTimer.size == 24)
+assert(BetterBeReadyDB.schemaVersion == 8)
+assert(BetterBeReadyDB.trackers.combatTimer.size == 16)
 assert(BetterBeReadyDB.trackers.battleRes.showRechargeTime == true)
 assert(BetterBeReadyDB.trackers.battleRes.textMode == true)
 assert(BetterBeReadyDB.trackers.battleRes.textAlignment == "LEFT")
 assert(BetterBeReadyDB.trackers.bloodlust.textMode == true)
 assert(BetterBeReadyDB.trackers.bloodlust.textAlignment == "LEFT")
+assert(BetterBeReadyDB.trackers.combatPotion.enabled == true)
+assert(BetterBeReadyDB.trackers.combatPotion.size == 16)
+assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "LEFT")
 assert(BetterBeReadyDB.trackers.bloodlust.musicTrack == "sounds\\DejaVuHero.ogg")
 assert(#BBR.bloodlustMusicTracks == 60)
 assert(BBR:GetBloodlustMusicTrack("customsongs\\Bruh.ogg") == nil)
@@ -216,6 +235,17 @@ assert(BetterBeReadyDB.trackers.battleRes.showLabel == false)
 assert(BetterBeReadyDB.trackers.bloodlust.clickToCast == nil)
 assert(BetterBeReadyDB.trackers.stoneform == nil)
 assert(BBR.trackers.bloodlust.frame)
+assert(BBR.trackers.combatPotion.frame)
+assert(BBR.trackers.combatPotion.status == "UNAVAILABLE")
+assert(BBR.trackers.combatPotion.frame.value:GetText() == "POT")
+assert(BBR.trackers.combatPotion.frame.statusText:GetText() == "-")
+assert(not BBR.trackers.combatPotion.frame.icon:IsShown())
+assert(not BBR.trackers.combatPotion.frame.background:IsShown())
+assert(not BBR.trackers.combatPotion.frame.border:IsShown())
+assert(BBR.trackers.combatPotion.frame.cooldown.drawSwipe == false)
+assert(BBR.trackers.combatPotion.frame.cooldown.countdownFormatter)
+assert(BBR.trackers.combatPotion.eventFrame.events.BAG_UPDATE_COOLDOWN)
+assert(BBR.trackers.combatPotion.eventFrame.events.BAG_UPDATE_DELAYED)
 assert(BBR.trackers.battleRes.frame.value.textValue == 2)
 assert(BBR.trackers.battleRes.frame.value.parent == BBR.trackers.battleRes.frame.textOverlay)
 assert(BBR.trackers.battleRes.frame.value.point[1] == "LEFT")
@@ -311,6 +341,41 @@ assert(not BBR.trackers.battleRes.frame.separator:IsShown())
 assert(BBR.trackers.battleRes.frame.cooldown.drawSwipe == true)
 assert(BBR.trackers.battleRes.frame.width == 64)
 BBR:SetTrackerBooleanSetting("battleRes", "textMode", true)
+
+local combatPotion = BBR.trackers.combatPotion
+local testPotionID = 241288
+itemCounts[testPotionID] = 3
+combatPotion:Update()
+assert(combatPotion.status == "READY")
+assert(combatPotion.lastSeenItemID == testPotionID)
+assert(combatPotion.frame.statusText:IsShown())
+assert(combatPotion.frame.statusText:GetText() == "READY")
+
+itemCooldowns[testPotionID] = { startTime = 100, duration = 300, enabled = true }
+combatPotion:Update()
+assert(combatPotion.status == "COOLDOWN")
+assert(combatPotion.cooldownItemID == testPotionID)
+assert(not combatPotion.frame.statusText:IsShown())
+assert(combatPotion.frame.cooldown.cooldownInfo[1] == 100)
+assert(combatPotion.frame.cooldown.cooldownInfo[2] == 300)
+
+-- Keep tracking the cooldown after the final potion in a stack is consumed.
+itemCounts[testPotionID] = 0
+combatPotion:Update()
+assert(combatPotion.status == "COOLDOWN")
+
+now = 401
+combatPotion:Update()
+assert(combatPotion.status == "UNAVAILABLE")
+assert(combatPotion.frame.statusText:GetText() == "-")
+now = 100
+itemCooldowns[testPotionID] = nil
+
+BBR:SetTrackerTextAlignment("combatPotion", "RIGHT")
+assert(combatPotion.frame.cooldown.point[1] == "RIGHT")
+assert(combatPotion.frame.cooldown.point[2] == "CENTER")
+BBR:SetTrackerTextAlignment("combatPotion", "LEFT")
+assert(combatPotion.frame.value.point[1] == "LEFT")
 
 -- The Bloodlust tracker is a plain visual frame and remains movable in combat.
 local bloodlustFrame = BBR.trackers.bloodlust.frame
@@ -484,18 +549,20 @@ assert(BBR.trackers.combatTimer.frame.value.textValue == "1:05")
 BBR:ToggleConfig()
 assert(BBR.configFrame:IsShown())
 assert(BBR.configFrame.width == 600)
-assert(BBR.configFrame.height == 460)
+assert(BBR.configFrame.height == 540)
 assert(BBR.configFrame.rows.bloodlust.width == 564)
 assert(BBR.configFrame.rows.bloodlust.height == 116)
 assert(BBR.configFrame.rows.battleRes.height == 116)
+assert(BBR.configFrame.rows.combatPotion.height == 72)
 assert(BBR.configFrame.rows.combatTimer.height == 72)
 assert(BetterBeReadySizeSlider1Text.textValue == "Icon size: 64 px")
-assert(BetterBeReadySizeSlider3Text.textValue == "Text size: 24 px")
+assert(BetterBeReadySizeSlider3Text.textValue == "Text size: 16 px")
+assert(BetterBeReadySizeSlider4Text.textValue == "Text size: 16 px")
 assert(BetterBeReadyTextSizeSlider1Text.textValue == "Text size: 16 px")
 assert(BetterBeReadyTextSizeSlider2Text.textValue == "Text size: 16 px")
 assert(BBR.configFrame.rows.bloodlust.textMode:GetChecked() == false)
 
-for _, trackerKey in ipairs({ "bloodlust", "battleRes", "combatTimer" }) do
+for _, trackerKey in ipairs({ "bloodlust", "battleRes", "combatPotion", "combatTimer" }) do
     local enabledCheckbox = BBR.configFrame.rows[trackerKey].enabled
     enabledCheckbox:SetChecked(false)
     enabledCheckbox.scripts.OnClick(enabledCheckbox)
@@ -540,6 +607,13 @@ assert(BetterBeReadyDB.trackers.battleRes.textAlignment == "RIGHT")
 assert(BBR.configFrame.rows.battleRes.textAlignment:GetText() == "Right")
 battleResAlignments[1].setSelected(battleResAlignments[1].value)
 assert(BetterBeReadyDB.trackers.battleRes.textAlignment == "LEFT")
+assert(BBR.configFrame.rows.combatPotion.textAlignment:GetText() == "Left")
+local combatPotionAlignments = GetDropdownRadios(BBR.configFrame.rows.combatPotion.textAlignment)
+combatPotionAlignments[2].setSelected(combatPotionAlignments[2].value)
+assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "RIGHT")
+assert(BBR.configFrame.rows.combatPotion.textAlignment:GetText() == "Right")
+combatPotionAlignments[1].setSelected(combatPotionAlignments[1].value)
+assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "LEFT")
 assert(BBR.configFrame.rows.bloodlust.musicDropdown:GetText() == "No sound")
 local musicRadios = GetDropdownRadios(BBR.configFrame.rows.bloodlust.musicDropdown)
 assert(#musicRadios == 61)

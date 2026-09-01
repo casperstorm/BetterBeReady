@@ -6,7 +6,7 @@ BBR.trackers = {}
 BBR.trackerOrder = {}
 
 local DEFAULTS = {
-    schemaVersion = 6,
+    schemaVersion = 8,
     locked = false,
     trackers = {
         bloodlust = {
@@ -38,10 +38,20 @@ local DEFAULTS = {
         combatTimer = {
             enabled = true,
             showLabel = false,
-            size = 24,
+            size = 16,
             point = "CENTER",
             relativePoint = "CENTER",
             x = 90,
+            y = 0,
+        },
+        combatPotion = {
+            enabled = true,
+            showLabel = false,
+            size = 16,
+            textAlignment = "LEFT",
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 180,
             y = 0,
         },
     },
@@ -232,6 +242,17 @@ function BBR:Initialize()
         end
         _G.BetterBeReadyDB.schemaVersion = 6
     end
+    if databaseVersion < 7 then
+        _G.BetterBeReadyDB.schemaVersion = 7
+    end
+    if databaseVersion < 8 then
+        local trackers = _G.BetterBeReadyDB.trackers
+        local combatTimer = trackers and trackers.combatTimer
+        if combatTimer and combatTimer.size == 24 then
+            combatTimer.size = 16
+        end
+        _G.BetterBeReadyDB.schemaVersion = 8
+    end
 
     ApplyDefaults(_G.BetterBeReadyDB, DEFAULTS)
     self.db = _G.BetterBeReadyDB
@@ -260,9 +281,11 @@ function BBR:Initialize()
         elseif command == "close" then
             BBR:CloseConfig()
         elseif command == "debug" then
-            local tracker = BBR.trackers.bloodlust
-            if tracker and tracker.PrintDebug then
-                tracker:PrintDebug()
+            for _, trackerKey in ipairs({ "bloodlust", "combatPotion" }) do
+                local tracker = BBR.trackers[trackerKey]
+                if tracker and tracker.PrintDebug then
+                    tracker:PrintDebug()
+                end
             end
         else
             BBR:ToggleConfig()

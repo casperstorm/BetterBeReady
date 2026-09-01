@@ -26,6 +26,16 @@ local TRACKER_ROWS = {
         height = 116,
     },
     {
+        key = "combatPotion",
+        title = "Combat potion",
+        minSize = 8,
+        maxSize = 32,
+        sizeLabel = "Text size",
+        hasTextAlignment = true,
+        alignmentY = -38,
+        height = 72,
+    },
+    {
         key = "combatTimer",
         title = "Combat timer",
         minSize = 10,
@@ -125,7 +135,7 @@ function BBR:CreateConfig()
 
     local frame = CreateFrame("Frame", "BetterBeReadyConfigFrame", UIParent, "BasicFrameTemplateWithInset")
     self.configFrame = frame
-    frame:SetSize(600, 460)
+    frame:SetSize(600, 540)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -197,7 +207,7 @@ function BBR:CreateConfig()
         end
 
         if rowInfo.hasTextAlignment then
-            local alignmentY = rowInfo.hasMusic and -38 or -74
+            local alignmentY = rowInfo.alignmentY or (rowInfo.hasMusic and -38 or -74)
             CreateLabel(row, "Alignment", 12, alignmentY - 13)
             row.textAlignment = CreateAlignmentDropdown(row, trackerKey, 92, alignmentY)
         end
