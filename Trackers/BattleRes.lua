@@ -134,20 +134,35 @@ function tracker:ApplySettings()
     if textMode then
         local textSize = settings.textSize
         local inlineGap = math.max(3, textSize * 0.25)
-        self.frame:SetSize(textSize * 6, math.max(20, textSize * 1.6))
+        local alignment = settings.textAlignment == "RIGHT" and "RIGHT" or "LEFT"
+        self.frame:SetSize(textSize * 7, math.max(20, textSize * 1.6))
         self.frame.separator:SetShown(showRechargeTime)
         SetFontSize(self.frame.separator, textSize)
         SetFontSize(self.frame.rechargeFallback, textSize)
 
         if showRechargeTime then
             self.frame.separator:ClearAllPoints()
-            self.frame.separator:SetPoint("CENTER", self.frame, "CENTER", -textSize * 1.15, 0)
-            self.frame.value:SetPoint("RIGHT", self.frame.separator, "LEFT", -inlineGap, 0)
-            self.frame.cooldown:SetSize(textSize * 3.4, textSize * 1.5)
-            self.frame.cooldown:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
             self.frame.rechargeFallback:ClearAllPoints()
-            self.frame.rechargeFallback:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
-            self.frame.rechargeFallback:SetJustifyH("LEFT")
+            self.frame.cooldown:SetSize(textSize * 3.4, textSize * 1.5)
+            if alignment == "RIGHT" then
+                self.frame.cooldown:SetPoint("RIGHT", self.frame, "CENTER", textSize * 2.65, 0)
+                self.frame.rechargeFallback:SetPoint(
+                    "RIGHT",
+                    self.frame,
+                    "CENTER",
+                    textSize * 2.65,
+                    0
+                )
+                self.frame.separator:SetPoint("RIGHT", self.frame.cooldown, "LEFT", -inlineGap, 0)
+                self.frame.value:SetPoint("RIGHT", self.frame.separator, "LEFT", -inlineGap, 0)
+                self.frame.rechargeFallback:SetJustifyH("RIGHT")
+            else
+                self.frame.value:SetPoint("LEFT", self.frame, "CENTER", -textSize * 2, 0)
+                self.frame.separator:SetPoint("LEFT", self.frame.value, "RIGHT", inlineGap, 0)
+                self.frame.cooldown:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+                self.frame.rechargeFallback:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+                self.frame.rechargeFallback:SetJustifyH("LEFT")
+            end
         else
             self.frame.value:SetPoint("CENTER", self.frame, "CENTER", 0, 0)
         end

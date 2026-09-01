@@ -34,7 +34,7 @@ function tracker:UpdateDisplay()
     if self.active and self.startedAt then
         self.elapsed = GetTime() - self.startedAt
     end
-    self.frame.value:SetText(BBR:FormatDuration(self.elapsed, true))
+    self.frame.value:SetText(BBR:FormatDuration(self.elapsed, false))
 end
 
 function tracker:Create()
@@ -71,8 +71,9 @@ function tracker:Create()
         if not self.active then
             return
         end
+
         self.updateAccumulator = (self.updateAccumulator or 0) + elapsed
-        if self.updateAccumulator >= 0.05 then
+        if self.updateAccumulator >= 0.1 then
             self.updateAccumulator = 0
             self:UpdateDisplay()
         end

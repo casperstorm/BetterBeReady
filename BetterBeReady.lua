@@ -14,7 +14,9 @@ local DEFAULTS = {
             showLabel = false,
             size = 64,
             textSize = 16,
-            textMode = false,
+            textMode = true,
+            textAlignment = "LEFT",
+            musicTrack = "sounds\\DejaVuHero.ogg",
             point = "CENTER",
             relativePoint = "CENTER",
             x = -90,
@@ -26,7 +28,8 @@ local DEFAULTS = {
             size = 64,
             textSize = 16,
             showRechargeTime = true,
-            textMode = false,
+            textMode = true,
+            textAlignment = "LEFT",
             point = "CENTER",
             relativePoint = "CENTER",
             x = 0,
@@ -108,11 +111,15 @@ end
 
 function BBR:SetTrackerEnabled(key, enabled)
     local settings = self:GetTrackerSettings(key)
-    if not settings then
+    local tracker = self.trackers[key]
+    if not settings or not tracker then
         return
     end
     settings.enabled = enabled and true or false
-    self:RefreshTrackerVisibility(self.trackers[key])
+    if tracker.OnEnabledChanged then
+        tracker:OnEnabledChanged(settings.enabled)
+    end
+    self:RefreshTrackerVisibility(tracker)
 end
 
 function BBR:SetTrackerSize(key, size)
@@ -155,6 +162,19 @@ function BBR:SetTrackerBooleanSetting(key, settingKey, enabled)
     end
     settings[settingKey] = enabled and true or false
     tracker:ApplySettings()
+end
+
+function BBR:SetTrackerTextAlignment(key, alignment)
+    local settings = self:GetTrackerSettings(key)
+    local tracker = self.trackers[key]
+    if not settings or not tracker then
+        return
+    end
+    settings.textAlignment = alignment == "RIGHT" and "RIGHT" or "LEFT"
+    tracker:ApplySettings()
+    if self.RefreshConfig then
+        self:RefreshConfig()
+    end
 end
 
 function BBR:ResetPositions()

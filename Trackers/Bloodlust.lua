@@ -14,6 +14,23 @@ local tracker = {
         2825,  -- Bloodlust
         32182, -- Heroism
     },
+    bloodlustBuffSpellIDs = {
+        2825,   -- Bloodlust
+        32182,  -- Heroism
+        80353,  -- Time Warp
+        90355,  -- Ancient Hysteria
+        146555, -- Drums of Rage
+        160452, -- Netherwinds
+        178207, -- Drums of Fury
+        230935, -- Drums of the Mountain
+        256740, -- Drums of the Maelstrom
+        264667, -- Primal Rage
+        309658, -- Drums of Deathly Ferocity
+        381301, -- Feral Hide Drums
+        390386, -- Fury of the Aspects
+        444257, -- Thunderous Drums
+        1243972, -- Void-Touched Drums
+    },
     hunterCommandPetSpellID = 272651,
     primalRageSpellID = 264667,
 }
@@ -23,6 +40,122 @@ local function SetFontSize(fontString, size)
     fontString:SetFont(font, math.max(9, math.floor(size)), "OUTLINE")
 end
 
+local function HueToRGB(hue)
+    local section = math.floor(hue * 6)
+    local fraction = hue * 6 - section
+    local inverse = 1 - fraction
+    section = section % 6
+
+    if section == 0 then return 1, fraction, 0 end
+    if section == 1 then return inverse, 1, 0 end
+    if section == 2 then return 0, 1, fraction end
+    if section == 3 then return 0, inverse, 1 end
+    if section == 4 then return fraction, 0, 1 end
+    return 1, 0, inverse
+end
+
+function tracker:ApplyDisplayColor(red, green, blue, includeIcon)
+    self.frame.value:SetTextColor(red, green, blue)
+    self.frame.separator:SetTextColor(red, green, blue)
+    self.frame.statusText:SetTextColor(red, green, blue)
+    if self.frame.cooldown.GetCountdownFontString then
+        local countdownFont = self.frame.cooldown:GetCountdownFontString()
+        if countdownFont then
+            countdownFont:SetTextColor(red, green, blue)
+        end
+    end
+    if includeIcon then
+        self.frame.icon:SetVertexColor(red, green, blue)
+    end
+end
+
+function tracker:AdvanceActiveRainbow(elapsed)
+    self.rainbowUpdateElapsed = (self.rainbowUpdateElapsed or 0) + (elapsed or 0)
+    if self.rainbowUpdateElapsed < 0.03 then
+        return
+    end
+
+    self.rainbowHue = ((self.rainbowHue or 0) + self.rainbowUpdateElapsed * 2.4) % 1
+    self.rainbowUpdateElapsed = 0
+    local red, green, blue = HueToRGB(self.rainbowHue)
+    self:ApplyDisplayColor(red, green, blue, true)
+end
+
+function tracker:SetActiveRainbow(enabled)
+    if enabled then
+        if not self.rainbowActive then
+            self.rainbowActive = true
+            self.rainbowHue = 0
+            self.rainbowUpdateElapsed = 0
+            self.frame:SetScript("OnUpdate", function(_, elapsed)
+                self:AdvanceActiveRainbow(elapsed)
+            end)
+        end
+        local red, green, blue = HueToRGB(self.rainbowHue or 0)
+        self:ApplyDisplayColor(red, green, blue, true)
+    elseif self.rainbowActive then
+        self.rainbowActive = false
+        self.frame:SetScript("OnUpdate", nil)
+    end
+end
+
+function tracker:StopBloodlustMusic()
+    if self.musicSoundHandle and StopSound then
+        pcall(StopSound, self.musicSoundHandle)
+    end
+    self.musicSoundHandle = nil
+    self.musicTrackPlaying = nil
+end
+
+function tracker:StartBloodlustMusic()
+    local settings = BBR:GetTrackerSettings(self.key)
+    if not (settings and settings.enabled and settings.musicTrack ~= "") then
+        return
+    end
+
+    local track = BBR:GetBloodlustMusicTrack(settings.musicTrack)
+    if not (track and PlaySoundFile) then
+        return
+    end
+
+    local soundPath = "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\" .. track.id
+    local callOK, played, soundHandle = pcall(PlaySoundFile, soundPath, "Master")
+    if callOK and played then
+        self.musicSoundHandle = soundHandle
+        self.musicTrackPlaying = track.id
+    end
+end
+
+function tracker:SetBloodlustMusicActive(active)
+    if active then
+        if self.musicAuraActive then
+            return
+        end
+        self.musicAuraActive = true
+        self:StartBloodlustMusic()
+    else
+        self.musicAuraActive = false
+        self:StopBloodlustMusic()
+    end
+end
+
+function tracker:OnMusicSelectionChanged()
+    self:StopBloodlustMusic()
+    if self.status == "ACTIVE" then
+        self.musicAuraActive = true
+        self:StartBloodlustMusic()
+    end
+end
+
+function tracker:OnEnabledChanged(enabled)
+    if not enabled then
+        self:SetBloodlustMusicActive(false)
+    elseif self.status == "ACTIVE" then
+        self.musicAuraActive = false
+        self:SetBloodlustMusicActive(true)
+    end
+end
+
 function tracker:RefreshTextStatus()
     if not (self.frame and self.frame.statusText) then
         return
@@ -30,11 +163,17 @@ function tracker:RefreshTextStatus()
 
     local settings = BBR:GetTrackerSettings(self.key)
     local textMode = settings and settings.textMode == true
+    local bloodlustActive = self.status == "ACTIVE"
+    self.frame.value:SetText(bloodlustActive and "BL ACTIVE" or "BL")
     self.frame.value:SetShown(textMode)
     self.frame.separator:SetShown(textMode)
 
     local text
-    if self.status == "READY" then
+    if bloodlustActive then
+        if self.cooldownActive ~= true then
+            text = "ACTIVE"
+        end
+    elseif self.status == "READY" then
         if self.cooldownActive == false then
             text = "READY"
         elseif self.cooldownActive == nil then
@@ -52,22 +191,19 @@ function tracker:RefreshTextStatus()
     self.frame.statusText:SetText(text or "")
     self.frame.statusText:SetShown(textMode and text ~= nil)
 
-    local red, green, blue = 0.65, 0.65, 0.65
-    if self.status == "LOCKED" then
-        red, green, blue = 1, 0.3, 0.3
-    elseif self.status == "READY" and self.cooldownActive == false then
-        red, green, blue = 0.35, 1, 0.4
-    elseif self.status == "READY" and self.cooldownActive == true then
-        red, green, blue = 1, 0.82, 0.25
-    end
-    self.frame.value:SetTextColor(red, green, blue)
-    self.frame.separator:SetTextColor(red, green, blue)
-    self.frame.statusText:SetTextColor(red, green, blue)
-    if self.frame.cooldown.GetCountdownFontString then
-        local countdownFont = self.frame.cooldown:GetCountdownFontString()
-        if countdownFont then
-            countdownFont:SetTextColor(red, green, blue)
+    if bloodlustActive then
+        self:SetActiveRainbow(true)
+    else
+        self:SetActiveRainbow(false)
+        local red, green, blue = 0.65, 0.65, 0.65
+        if self.status == "LOCKED" then
+            red, green, blue = 1, 0.3, 0.3
+        elseif self.status == "READY" and self.cooldownActive == false then
+            red, green, blue = 0.35, 1, 0.4
+        elseif self.status == "READY" and self.cooldownActive == true then
+            red, green, blue = 1, 0.82, 0.25
         end
+        self:ApplyDisplayColor(red, green, blue, false)
     end
 end
 
@@ -234,22 +370,27 @@ function tracker:SetLockoutCooldown(aura)
 end
 
 function tracker:Update()
-    if not self.spellAvailable then
-        self.status = "UNAVAILABLE"
-        self.cooldownActive = false
-        self.frame.icon:SetVertexColor(0.45, 0.45, 0.45)
-        self.frame.detail:SetText("")
-        BBR:ClearTrackerCooldown(self)
-        self:RefreshTextStatus()
-        return
-    end
-
     if not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then
         self.status = "UNKNOWN"
         self.cooldownActive = nil
         self.frame.icon:SetVertexColor(0.55, 0.55, 0.55)
         self.frame.detail:SetText("")
         BBR:ClearTrackerCooldown(self)
+        self:SetBloodlustMusicActive(false)
+        self:RefreshTextStatus()
+        return
+    end
+
+    local activeAura, activeState = BBR:FindFirstAuraBySpellID(function(spellID)
+        return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+    end, self.bloodlustBuffSpellIDs)
+
+    if activeState == "LOCKED" then
+        self.status = "ACTIVE"
+        self.frame.icon:SetVertexColor(0.25, 1, 0.35)
+        self.frame.detail:SetText("")
+        self:SetLockoutCooldown(activeAura)
+        self:SetBloodlustMusicActive(true)
         self:RefreshTextStatus()
         return
     end
@@ -258,14 +399,24 @@ function tracker:Update()
         return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
     end, self.lockoutSpellIDs)
 
+    if state == "READY" and activeState == "UNKNOWN" then
+        state = "UNKNOWN"
+    end
+
     if state == "LOCKED" then
         self.frame.icon:SetVertexColor(1, 0.22, 0.22)
         self.frame.detail:SetText("")
         self:SetLockoutCooldown(aura)
-    elseif state == "READY" then
+    elseif state == "READY" and self.spellAvailable then
         self.frame.icon:SetVertexColor(0.25, 1, 0.35)
         self.frame.detail:SetText("")
         self:SetSpellCooldown()
+    elseif state == "READY" then
+        state = "UNAVAILABLE"
+        self.cooldownActive = false
+        self.frame.icon:SetVertexColor(0.45, 0.45, 0.45)
+        self.frame.detail:SetText("")
+        BBR:ClearTrackerCooldown(self)
     else
         self.cooldownActive = nil
         self.frame.icon:SetVertexColor(0.65, 0.65, 0.65)
@@ -274,6 +425,7 @@ function tracker:Update()
     end
 
     self.status = state
+    self:SetBloodlustMusicActive(false)
     self:RefreshTextStatus()
 end
 
@@ -327,19 +479,28 @@ function tracker:ApplySettings()
     if textMode then
         local textSize = settings.textSize
         local inlineGap = math.max(3, textSize * 0.25)
-        self.frame:SetSize(textSize * 6, math.max(20, textSize * 1.6))
+        local alignment = settings.textAlignment == "RIGHT" and "RIGHT" or "LEFT"
+        self.frame:SetSize(textSize * 13, math.max(20, textSize * 1.6))
         SetFontSize(self.frame.separator, textSize)
         SetFontSize(self.frame.statusText, textSize)
 
         self.frame.value:ClearAllPoints()
         self.frame.separator:ClearAllPoints()
         self.frame.statusText:ClearAllPoints()
-        self.frame.separator:SetPoint("CENTER", self.frame, "CENTER", -textSize * 0.85, 0)
-        self.frame.value:SetPoint("RIGHT", self.frame.separator, "LEFT", -inlineGap, 0)
         self.frame.cooldown:SetSize(textSize * 3.4, textSize * 1.5)
-        self.frame.cooldown:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
-        self.frame.statusText:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
-        self.frame.statusText:SetJustifyH("LEFT")
+        if alignment == "RIGHT" then
+            self.frame.cooldown:SetPoint("RIGHT", self.frame, "CENTER", textSize * 3, 0)
+            self.frame.statusText:SetPoint("RIGHT", self.frame, "CENTER", textSize * 3, 0)
+            self.frame.separator:SetPoint("RIGHT", self.frame.cooldown, "LEFT", -inlineGap, 0)
+            self.frame.value:SetPoint("RIGHT", self.frame.separator, "LEFT", -inlineGap, 0)
+            self.frame.statusText:SetJustifyH("RIGHT")
+        else
+            self.frame.value:SetPoint("LEFT", self.frame, "CENTER", -textSize * 2.1, 0)
+            self.frame.separator:SetPoint("LEFT", self.frame.value, "RIGHT", inlineGap, 0)
+            self.frame.cooldown:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+            self.frame.statusText:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+            self.frame.statusText:SetJustifyH("LEFT")
+        end
     else
         self.frame.value:Hide()
         self.frame.separator:Hide()

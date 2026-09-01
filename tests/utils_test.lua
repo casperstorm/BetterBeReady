@@ -30,4 +30,3 @@ assert(found == nil)
 assert(state == "UNKNOWN")
 
 print("utils_test.lua: OK")
-

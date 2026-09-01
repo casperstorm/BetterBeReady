@@ -9,7 +9,9 @@ local TRACKER_ROWS = {
         sizeLabel = "Icon size",
         hasTextSize = true,
         hasTextMode = true,
-        allowLabel = false,
+        hasTextAlignment = true,
+        hasMusic = true,
+        height = 116,
     },
     {
         key = "battleRes",
@@ -20,9 +22,17 @@ local TRACKER_ROWS = {
         hasTextSize = true,
         hasRechargeTime = true,
         hasTextMode = true,
-        allowLabel = false,
+        hasTextAlignment = true,
+        height = 116,
     },
-    { key = "combatTimer", title = "Combat timer", minSize = 10, maxSize = 72, sizeLabel = "Text size", allowLabel = false },
+    {
+        key = "combatTimer",
+        title = "Combat timer",
+        minSize = 10,
+        maxSize = 72,
+        sizeLabel = "Text size",
+        height = 72,
+    },
 }
 
 local function CreateCheckbox(parent, label, x, y, onClick)
@@ -35,10 +45,17 @@ local function CreateCheckbox(parent, label, x, y, onClick)
     return checkbox
 end
 
+local function CreateLabel(parent, text, x, y)
+    local label = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("LEFT", parent, "TOPLEFT", x, y)
+    label:SetText(text)
+    return label
+end
+
 local function CreateSizeSlider(parent, name, x, y, minimum, maximum, sizeLabel, onChanged)
     local slider = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
     slider:SetPoint("TOPLEFT", x, y)
-    slider:SetWidth(180)
+    slider:SetWidth(170)
     slider:SetMinMaxValues(minimum, maximum)
     slider:SetValueStep(1)
     slider:SetObeyStepOnDrag(true)
@@ -54,6 +71,53 @@ local function CreateSizeSlider(parent, name, x, y, minimum, maximum, sizeLabel,
     return slider
 end
 
+local function CreateAlignmentDropdown(parent, trackerKey, x, y)
+    local dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+    dropdown:SetPoint("TOPLEFT", x, y)
+    dropdown:SetSize(150, 24)
+    dropdown:SetDefaultText("Left")
+    dropdown:SetupMenu(function(_, rootDescription)
+        local function IsSelected(alignment)
+            local settings = BBR:GetTrackerSettings(trackerKey)
+            return settings and settings.textAlignment == alignment
+        end
+
+        local function SetSelected(alignment)
+            BBR:SetTrackerTextAlignment(trackerKey, alignment)
+        end
+
+        rootDescription:CreateRadio("Left", IsSelected, SetSelected, "LEFT")
+        rootDescription:CreateRadio("Right", IsSelected, SetSelected, "RIGHT")
+    end)
+    return dropdown
+end
+
+local function CreateMusicDropdown(parent, trackerKey, x, y)
+    local dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
+    dropdown:SetPoint("TOPLEFT", x, y)
+    dropdown:SetSize(190, 24)
+    dropdown:SetDefaultText("No sound")
+    if dropdown.SetMouseWheelEnabled then
+        dropdown:SetMouseWheelEnabled(true)
+    end
+    dropdown:SetupMenu(function(_, rootDescription)
+        local function IsSelected(trackID)
+            local settings = BBR:GetTrackerSettings(trackerKey)
+            return settings and settings.musicTrack == trackID
+        end
+
+        local function SetSelected(trackID)
+            BBR:SetBloodlustMusicTrack(trackID)
+        end
+
+        rootDescription:CreateRadio("No sound", IsSelected, SetSelected, "")
+        for _, track in ipairs(BBR.bloodlustMusicTracks) do
+            rootDescription:CreateRadio(track.title, IsSelected, SetSelected, track.id)
+        end
+    end)
+    return dropdown
+end
+
 function BBR:CreateConfig()
     if self.configFrame then
         return
@@ -61,7 +125,7 @@ function BBR:CreateConfig()
 
     local frame = CreateFrame("Frame", "BetterBeReadyConfigFrame", UIParent, "BasicFrameTemplateWithInset")
     self.configFrame = frame
-    frame:SetSize(540, 500)
+    frame:SetSize(600, 460)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetMovable(true)
@@ -71,8 +135,6 @@ function BBR:CreateConfig()
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
 
-    -- Keep every close path independent from tracker refreshes so the settings
-    -- window can always be dismissed during combat.
     if frame.CloseButton then
         frame.CloseButton:SetScript("OnClick", function()
             BBR:CloseConfig()
@@ -85,12 +147,12 @@ function BBR:CreateConfig()
     frame.TitleText:SetText("BetterBeReady")
 
     frame.description = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.description:SetPoint("TOPLEFT", 18, -38)
-    frame.description:SetText("Unlock to drag trackers, including during combat.")
+    frame.description:SetPoint("TOPLEFT", 20, -38)
+    frame.description:SetText("Unlock to move trackers—even during combat.")
 
     frame.lockButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.lockButton:SetSize(120, 24)
-    frame.lockButton:SetPoint("TOPLEFT", 18, -66)
+    frame.lockButton:SetPoint("TOPLEFT", 20, -62)
     frame.lockButton:SetScript("OnClick", function()
         BBR:SetLocked(not BBR.db.locked)
     end)
@@ -104,36 +166,60 @@ function BBR:CreateConfig()
     end)
 
     frame.rows = {}
+    local rowTop = -98
     for index, rowInfo in ipairs(TRACKER_ROWS) do
+        local trackerKey = rowInfo.key
         local row = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        row:SetPoint("TOPLEFT", 18, -105 - ((index - 1) * 110))
-        row:SetSize(500, 98)
+        row:SetPoint("TOPLEFT", 18, rowTop)
+        row:SetSize(564, rowInfo.height)
+        rowTop = rowTop - rowInfo.height - 10
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-        row:SetBackdropColor(0.08, 0.08, 0.08, 0.65)
+        row:SetBackdropColor(0.045, 0.045, 0.045, 0.72)
 
         row.title = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        row.title:SetPoint("TOPLEFT", 10, -8)
+        row.title:SetPoint("TOPLEFT", 12, -10)
         row.title:SetText(rowInfo.title)
 
-        row.enabled = CreateCheckbox(row, "Enabled", 8, -28, function(checked)
-            BBR:SetTrackerEnabled(rowInfo.key, checked)
+        row.enabled = CreateCheckbox(row, "Enabled", 135, -4, function(checked)
+            BBR:SetTrackerEnabled(trackerKey, checked)
         end)
 
-        if rowInfo.allowLabel ~= false then
-            row.showLabel = CreateCheckbox(row, "Show label", 105, -28, function(checked)
-                BBR:SetTrackerLabelVisible(rowInfo.key, checked)
+        if rowInfo.hasTextMode then
+            row.textMode = CreateCheckbox(row, "Text only", 245, -4, function(checked)
+                BBR:SetTrackerBooleanSetting(trackerKey, "textMode", checked)
             end)
         end
 
         if rowInfo.hasRechargeTime then
-            row.showRechargeTime = CreateCheckbox(row, "Show recharge time", 8, -58, function(checked)
-                BBR:SetTrackerBooleanSetting(rowInfo.key, "showRechargeTime", checked)
+            row.showRechargeTime = CreateCheckbox(row, "Show recharge time", 10, -40, function(checked)
+                BBR:SetTrackerBooleanSetting(trackerKey, "showRechargeTime", checked)
             end)
         end
 
-        if rowInfo.hasTextMode then
-            row.textMode = CreateCheckbox(row, "Text-only display", 145, -58, function(checked)
-                BBR:SetTrackerBooleanSetting(rowInfo.key, "textMode", checked)
+        if rowInfo.hasTextAlignment then
+            local alignmentY = rowInfo.hasMusic and -38 or -74
+            CreateLabel(row, "Alignment", 12, alignmentY - 13)
+            row.textAlignment = CreateAlignmentDropdown(row, trackerKey, 92, alignmentY)
+        end
+
+        if rowInfo.hasMusic then
+            CreateLabel(row, "Music", 12, -91)
+            row.musicDropdown = CreateMusicDropdown(row, trackerKey, 58, -78)
+
+            row.musicPlayButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.musicPlayButton:SetPoint("TOPLEFT", 256, -78)
+            row.musicPlayButton:SetSize(50, 24)
+            row.musicPlayButton:SetText("Play")
+            row.musicPlayButton:SetScript("OnClick", function()
+                BBR:PreviewBloodlustMusic()
+            end)
+
+            row.musicStopButton = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            row.musicStopButton:SetPoint("TOPLEFT", 312, -78)
+            row.musicStopButton:SetSize(50, 24)
+            row.musicStopButton:SetText("Stop")
+            row.musicStopButton:SetScript("OnClick", function()
+                BBR:StopBloodlustMusicPreview()
             end)
         end
 
@@ -141,13 +227,13 @@ function BBR:CreateConfig()
         row.size = CreateSizeSlider(
             row,
             sliderName,
-            295,
-            rowInfo.hasTextSize and -24 or -36,
+            374,
+            rowInfo.hasTextSize and -30 or -27,
             rowInfo.minSize,
             rowInfo.maxSize,
             rowInfo.sizeLabel,
             function(value)
-                BBR:SetTrackerSize(rowInfo.key, value)
+                BBR:SetTrackerSize(trackerKey, value)
             end
         )
 
@@ -156,23 +242,19 @@ function BBR:CreateConfig()
             row.textSize = CreateSizeSlider(
                 row,
                 textSliderName,
-                295,
-                -62,
+                374,
+                -72,
                 8,
                 32,
                 "Text size",
                 function(value)
-                    BBR:SetTrackerTextSize(rowInfo.key, value)
+                    BBR:SetTrackerTextSize(trackerKey, value)
                 end
             )
         end
 
-        frame.rows[rowInfo.key] = row
+        frame.rows[trackerKey] = row
     end
-
-    frame.footer = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.footer:SetPoint("BOTTOMLEFT", 18, 14)
-    frame.footer:SetText("Commands: /bbr, close, lock, unlock, reset, debug")
 
     frame:SetScript("OnShow", function()
         BBR:RefreshConfig()
@@ -188,15 +270,19 @@ function BBR:RefreshConfig()
     for key, row in pairs(self.configFrame.rows) do
         local settings = self:GetTrackerSettings(key)
         row.enabled:SetChecked(settings.enabled)
-        if row.showLabel then
-            row.showLabel:SetChecked(settings.showLabel)
-        end
         if row.showRechargeTime then
             row.showRechargeTime:SetChecked(settings.showRechargeTime)
         end
         if row.textMode then
             row.textMode:SetChecked(settings.textMode)
         end
+        if row.textAlignment then
+            row.textAlignment:SetText(settings.textAlignment == "RIGHT" and "Right" or "Left")
+        end
+        if row.musicDropdown then
+            row.musicDropdown:SetText(self:GetBloodlustMusicTitle(settings.musicTrack))
+        end
+
         row.size.refreshing = true
         row.size:SetValue(settings.size)
         row.size.refreshing = false
@@ -223,6 +309,7 @@ function BBR:OpenConfig()
 end
 
 function BBR:CloseConfig()
+    self:StopBloodlustMusicPreview()
     if self.configFrame and self.configFrame:IsShown() then
         self.configFrame:Hide()
     end

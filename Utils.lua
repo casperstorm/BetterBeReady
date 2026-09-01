@@ -72,4 +72,3 @@ function BBR:FormatDuration(seconds, includeTenths)
     local totalSeconds = math.floor(seconds)
     return string.format("%d:%02d", math.floor(totalSeconds / 60), totalSeconds % 60)
 end
-
