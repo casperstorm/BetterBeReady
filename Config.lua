@@ -8,6 +8,7 @@ local TRACKER_ROWS = {
         maxSize = 128,
         sizeLabel = "Icon size",
         hasTextSize = true,
+        hasTextMode = true,
         allowLabel = false,
     },
     {
@@ -18,6 +19,7 @@ local TRACKER_ROWS = {
         sizeLabel = "Icon size",
         hasTextSize = true,
         hasRechargeTime = true,
+        hasTextMode = true,
         allowLabel = false,
     },
     { key = "combatTimer", title = "Combat timer", minSize = 10, maxSize = 72, sizeLabel = "Text size", allowLabel = false },
@@ -129,6 +131,12 @@ function BBR:CreateConfig()
             end)
         end
 
+        if rowInfo.hasTextMode then
+            row.textMode = CreateCheckbox(row, "Text-only display", 145, -58, function(checked)
+                BBR:SetTrackerBooleanSetting(rowInfo.key, "textMode", checked)
+            end)
+        end
+
         local sliderName = "BetterBeReadySizeSlider" .. index
         row.size = CreateSizeSlider(
             row,
@@ -185,6 +193,9 @@ function BBR:RefreshConfig()
         end
         if row.showRechargeTime then
             row.showRechargeTime:SetChecked(settings.showRechargeTime)
+        end
+        if row.textMode then
+            row.textMode:SetChecked(settings.textMode)
         end
         row.size.refreshing = true
         row.size:SetValue(settings.size)

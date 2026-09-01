@@ -18,6 +18,59 @@ local tracker = {
     primalRageSpellID = 264667,
 }
 
+local function SetFontSize(fontString, size)
+    local font = GameFontNormal:GetFont()
+    fontString:SetFont(font, math.max(9, math.floor(size)), "OUTLINE")
+end
+
+function tracker:RefreshTextStatus()
+    if not (self.frame and self.frame.statusText) then
+        return
+    end
+
+    local settings = BBR:GetTrackerSettings(self.key)
+    local textMode = settings and settings.textMode == true
+    self.frame.value:SetShown(textMode)
+    self.frame.separator:SetShown(textMode)
+
+    local text
+    if self.status == "READY" then
+        if self.cooldownActive == false then
+            text = "READY"
+        elseif self.cooldownActive == nil then
+            text = "?"
+        end
+    elseif self.status == "LOCKED" then
+        if self.cooldownActive ~= true then
+            text = "WAIT"
+        end
+    elseif self.status == "UNAVAILABLE" then
+        text = "-"
+    else
+        text = "?"
+    end
+    self.frame.statusText:SetText(text or "")
+    self.frame.statusText:SetShown(textMode and text ~= nil)
+
+    local red, green, blue = 0.65, 0.65, 0.65
+    if self.status == "LOCKED" then
+        red, green, blue = 1, 0.3, 0.3
+    elseif self.status == "READY" and self.cooldownActive == false then
+        red, green, blue = 0.35, 1, 0.4
+    elseif self.status == "READY" and self.cooldownActive == true then
+        red, green, blue = 1, 0.82, 0.25
+    end
+    self.frame.value:SetTextColor(red, green, blue)
+    self.frame.separator:SetTextColor(red, green, blue)
+    self.frame.statusText:SetTextColor(red, green, blue)
+    if self.frame.cooldown.GetCountdownFontString then
+        local countdownFont = self.frame.cooldown:GetCountdownFontString()
+        if countdownFont then
+            countdownFont:SetTextColor(red, green, blue)
+        end
+    end
+end
+
 function tracker:GetSpellName(spellID)
     if not (spellID and C_Spell and C_Spell.GetSpellName) then
         return nil
@@ -129,14 +182,25 @@ end
 
 function tracker:SetSpellCooldown()
     if not (C_Spell and C_Spell.GetSpellCooldown) then
+        self.cooldownActive = nil
         BBR:ClearTrackerCooldown(self)
         return
     end
 
     local ok, cooldownInfo = pcall(C_Spell.GetSpellCooldown, self.spellID)
     if not ok or not cooldownInfo then
+        self.cooldownActive = nil
         BBR:ClearTrackerCooldown(self)
         return
+    end
+
+    -- isActive is NeverSecret in SpellCooldownInfo, so this remains safe while
+    -- the timing fields are passed directly to Blizzard's cooldown widget.
+    local isActive, activeReadable = BBR:GetReadableField(cooldownInfo, "isActive")
+    if activeReadable and type(isActive) == "boolean" then
+        self.cooldownActive = isActive
+    else
+        self.cooldownActive = nil
     end
 
     local applied = pcall(function()
@@ -147,6 +211,7 @@ function tracker:SetSpellCooldown()
         )
     end)
     if not applied then
+        self.cooldownActive = nil
         BBR:ClearTrackerCooldown(self)
     end
 end
@@ -160,8 +225,10 @@ function tracker:SetLockoutCooldown(aura)
         and type(expirationTime) == "number"
         and duration > 0
     then
+        self.cooldownActive = true
         self.frame.cooldown:SetCooldown(expirationTime - duration, duration)
     else
+        self.cooldownActive = nil
         BBR:ClearTrackerCooldown(self)
     end
 end
@@ -169,17 +236,21 @@ end
 function tracker:Update()
     if not self.spellAvailable then
         self.status = "UNAVAILABLE"
+        self.cooldownActive = false
         self.frame.icon:SetVertexColor(0.45, 0.45, 0.45)
         self.frame.detail:SetText("")
         BBR:ClearTrackerCooldown(self)
+        self:RefreshTextStatus()
         return
     end
 
     if not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then
         self.status = "UNKNOWN"
+        self.cooldownActive = nil
         self.frame.icon:SetVertexColor(0.55, 0.55, 0.55)
         self.frame.detail:SetText("")
         BBR:ClearTrackerCooldown(self)
+        self:RefreshTextStatus()
         return
     end
 
@@ -196,19 +267,30 @@ function tracker:Update()
         self.frame.detail:SetText("")
         self:SetSpellCooldown()
     else
+        self.cooldownActive = nil
         self.frame.icon:SetVertexColor(0.65, 0.65, 0.65)
         self.frame.detail:SetText("")
         BBR:ClearTrackerCooldown(self)
     end
 
     self.status = state
+    self:RefreshTextStatus()
 end
 
 function tracker:Create()
     BBR:CreateTrackerFrame(self, 136012)
     self.frame.cooldown:SetHideCountdownNumbers(false)
     self.frame.label:SetText("")
-    self.frame.value:SetText("")
+    self.frame.value:SetText("BL")
+
+    self.frame.separator = self.frame.textOverlay:CreateFontString(nil, "OVERLAY")
+    self.frame.separator:SetFontObject(GameFontNormal)
+    self.frame.separator:SetText("|")
+    self.frame.separator:Hide()
+
+    self.frame.statusText = self.frame.textOverlay:CreateFontString(nil, "OVERLAY")
+    self.frame.statusText:SetFontObject(GameFontNormal)
+    self.frame.statusText:Hide()
 
     self:SelectBloodlustSpell()
 
@@ -230,6 +312,41 @@ end
 
 function tracker:ApplySettings()
     BBR:ApplyTrackerFrameSettings(self)
+    local settings = BBR:GetTrackerSettings(self.key)
+    local textMode = settings.textMode == true
+
+    self.frame.background:SetShown(not textMode)
+    self.frame.icon:SetShown(not textMode)
+    self.frame.border:SetShown(not textMode)
+    self.frame.cooldown:ClearAllPoints()
+    if self.frame.cooldown.SetDrawSwipe then
+        self.frame.cooldown:SetDrawSwipe(not textMode)
+    end
+    BBR:SetMinuteSecondCountdownFormat(self.frame.cooldown, textMode)
+
+    if textMode then
+        local textSize = settings.textSize
+        local inlineGap = math.max(3, textSize * 0.25)
+        self.frame:SetSize(textSize * 6, math.max(20, textSize * 1.6))
+        SetFontSize(self.frame.separator, textSize)
+        SetFontSize(self.frame.statusText, textSize)
+
+        self.frame.value:ClearAllPoints()
+        self.frame.separator:ClearAllPoints()
+        self.frame.statusText:ClearAllPoints()
+        self.frame.separator:SetPoint("CENTER", self.frame, "CENTER", -textSize * 0.85, 0)
+        self.frame.value:SetPoint("RIGHT", self.frame.separator, "LEFT", -inlineGap, 0)
+        self.frame.cooldown:SetSize(textSize * 3.4, textSize * 1.5)
+        self.frame.cooldown:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+        self.frame.statusText:SetPoint("LEFT", self.frame.separator, "RIGHT", inlineGap, 0)
+        self.frame.statusText:SetJustifyH("LEFT")
+    else
+        self.frame.value:Hide()
+        self.frame.separator:Hide()
+        self.frame.statusText:Hide()
+        self.frame.cooldown:SetAllPoints(self.frame)
+    end
+    self:RefreshTextStatus()
 end
 
 BBR:RegisterTracker("bloodlust", tracker)

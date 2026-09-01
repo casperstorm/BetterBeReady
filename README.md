@@ -6,8 +6,8 @@ Made for Midnight.
 
 ## Trackers
 
-- **Bloodlust safety** — green when the player has no Bloodlust lockout and red while Sated, Exhaustion, Temporal Displacement, Fatigued, or Insanity is active. The cooldown swipe shows the relevant remaining duration. Hunters are detected through Command Pet's live Ferocity override; other pet specializations remain gray.
-- **Battle res charges** — displays the encounter's shared battle-res count and native recharge countdown using the same Rebirth charge source used by MRT.
+- **Bloodlust safety** — green when the player has no Bloodlust lockout and red while Sated, Exhaustion, Temporal Displacement, Fatigued, or Insanity is active. The cooldown swipe shows the relevant remaining duration. It can also use a compact text display (`BL | READY` or `BL | 10:00`) with an `mm:ss` countdown. Hunters are detected through Command Pet's live Ferocity override; other pet specializations remain gray.
+- **Battle res charges** — displays the encounter's shared battle-res count and native recharge countdown using the same Rebirth charge source used by MRT. It can be shown as the existing icon or as a compact text row (`1 | 01:02`), using `-` when no recharge is active.
 - **Combat time** — starts on encounter start or when the player enters combat and stops after the encounter/combat ends.
 
 Each tracker can be enabled, moved, and resized independently, including during combat while unlocked. Icon and text sizes are configured separately, and the battle-res recharge time can be hidden.

@@ -5,6 +5,47 @@ local function SetFontSize(fontString, size)
     fontString:SetFont(font, math.max(9, math.floor(size)), "OUTLINE")
 end
 
+function BBR:SetMinuteSecondCountdownFormat(cooldown, enabled)
+    if not (cooldown and cooldown.SetCountdownFormatter) then
+        return
+    end
+
+    if not enabled then
+        pcall(cooldown.SetCountdownFormatter, cooldown, nil)
+        return
+    end
+
+    if not cooldown.bbrMinuteSecondFormatter
+        and C_StringUtil
+        and C_StringUtil.CreateNumericRuleFormatter
+    then
+        local ok, formatter = pcall(C_StringUtil.CreateNumericRuleFormatter)
+        if ok and formatter and formatter.SetBreakpoints then
+            local configured = pcall(formatter.SetBreakpoints, formatter, {
+                {
+                    threshold = 0,
+                    format = "%d:%02d",
+                    components = {
+                        { div = 60 },
+                        { mod = 60 },
+                    },
+                },
+            })
+            if configured then
+                cooldown.bbrMinuteSecondFormatter = formatter
+            end
+        end
+    end
+
+    if cooldown.bbrMinuteSecondFormatter then
+        pcall(
+            cooldown.SetCountdownFormatter,
+            cooldown,
+            cooldown.bbrMinuteSecondFormatter
+        )
+    end
+end
+
 function BBR:CreateTrackerFrame(tracker, iconTexture)
     local frame = CreateFrame("Frame", "BetterBeReady" .. tracker.key .. "Frame", UIParent)
     tracker.frame = frame
