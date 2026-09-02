@@ -11,8 +11,11 @@ local tracker = {
         264689, -- Fatigued variant
     },
     bloodlustSpellIDs = {
-        2825,  -- Bloodlust
-        32182, -- Heroism
+        2825,   -- Bloodlust (Horde Shaman)
+        32182,  -- Heroism (Alliance Shaman)
+        80353,  -- Time Warp (Mage)
+        390386, -- Fury of the Aspects (Evoker)
+        466904, -- Harrier's Cry (Marksmanship Hunter)
     },
     bloodlustBuffSpellIDs = {
         2825,   -- Bloodlust
@@ -22,13 +25,19 @@ local tracker = {
         146555, -- Drums of Rage
         160452, -- Netherwinds
         178207, -- Drums of Fury
+        204276, -- Drums of Battle
         230935, -- Drums of the Mountain
         256740, -- Drums of the Maelstrom
         264667, -- Primal Rage
+        272678, -- Drums of Battle variant
+        275200, -- Drums of Battle variant
+        292686, -- Drums of the Maelstrom variant
         309658, -- Drums of Deathly Ferocity
         381301, -- Feral Hide Drums
         390386, -- Fury of the Aspects
+        441076, -- Timeless Drums
         444257, -- Thunderous Drums
+        466904, -- Harrier's Cry
         1243972, -- Void-Touched Drums
     },
     hunterCommandPetSpellID = 272651,

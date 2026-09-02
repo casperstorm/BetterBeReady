@@ -463,6 +463,31 @@ end
 BBR.trackers.bloodlust:Update()
 assert(BBR.trackers.bloodlust.status == "UNKNOWN")
 
+-- Every current class-provided Bloodlust spell is recognized as castable.
+local knownBloodlustSpellID
+IsPlayerSpell = function(spellID)
+    return spellID == knownBloodlustSpellID
+end
+for _, spellID in ipairs({ 2825, 32182, 80353, 390386, 466904 }) do
+    knownBloodlustSpellID = spellID
+    BBR.trackers.bloodlust:SelectBloodlustSpell()
+    assert(BBR.trackers.bloodlust.spellID == spellID)
+    assert(BBR.trackers.bloodlust.spellAvailable == true)
+end
+
+-- Received-lust tracking includes Hunter variants and every drums generation.
+local trackedBloodlustBuffs = {}
+for _, spellID in ipairs(BBR.trackers.bloodlust.bloodlustBuffSpellIDs) do
+    trackedBloodlustBuffs[spellID] = true
+end
+for _, spellID in ipairs({
+    2825, 32182, 80353, 90355, 146555, 160452, 178207, 204276,
+    230935, 256740, 264667, 272678, 275200, 292686, 309658, 381301,
+    390386, 441076, 444257, 466904, 1243972,
+}) do
+    assert(trackedBloodlustBuffs[spellID], "missing Bloodlust buff " .. spellID)
+end
+
 -- A Ferocity pet exposes Primal Rage by overriding the Hunter's Command Pet.
 IsPlayerSpell = function() return false end
 C_Spell.GetOverrideSpell = function(spellID)
