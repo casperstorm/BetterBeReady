@@ -217,7 +217,7 @@ for _, frame in ipairs(allFrames) do
 end
 
 assert(BetterBeReadyDB)
-assert(BetterBeReadyDB.schemaVersion == 8)
+assert(BetterBeReadyDB.schemaVersion == 9)
 assert(BetterBeReadyDB.trackers.combatTimer.size == 16)
 assert(BetterBeReadyDB.trackers.battleRes.showRechargeTime == true)
 assert(BetterBeReadyDB.trackers.battleRes.textMode == true)
@@ -228,6 +228,7 @@ assert(BetterBeReadyDB.trackers.combatPotion.enabled == true)
 assert(BetterBeReadyDB.trackers.combatPotion.size == 16)
 assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "LEFT")
 assert(BetterBeReadyDB.trackers.bloodlust.musicTrack == "sounds\\DejaVuHero.ogg")
+assert(BetterBeReadyDB.trackers.bloodlust.musicEnabled == true)
 assert(#BBR.bloodlustMusicTracks == 60)
 assert(BBR:GetBloodlustMusicTrack("customsongs\\Bruh.ogg") == nil)
 assert(BetterBeReadyDB.trackers.bloodlust.showLabel == false)
@@ -403,6 +404,8 @@ assert(BBR.configFrame:IsShown())
 BBR:CloseConfig()
 
 BBR:SetBloodlustMusicTrack("sounds\\GasHero.ogg")
+BBR:SetTrackerEnabled("bloodlust", false)
+assert(not BBR.trackers.bloodlust.frame:IsShown())
 activeAura = { spellId = 2825, duration = 40, expirationTime = 140 }
 BBR:SetTrackerBooleanSetting("bloodlust", "textMode", true)
 BBR.trackers.bloodlust:Update()
@@ -416,6 +419,8 @@ assert(playedSounds[1].path
     == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\GasHero.ogg")
 assert(playedSounds[1].channel == "Master")
 assert(BBR.trackers.bloodlust.frame.scripts.OnUpdate)
+BBR:SetTrackerEnabled("bloodlust", true)
+assert(BBR.trackers.bloodlust.frame:IsShown())
 local activeColor = BBR.trackers.bloodlust.frame.value.textColor
 BBR.trackers.bloodlust.frame.scripts.OnUpdate(BBR.trackers.bloodlust.frame, 0.5)
 local advancedColor = BBR.trackers.bloodlust.frame.value.textColor
@@ -585,7 +590,9 @@ assert(BetterBeReadySizeSlider3Text.textValue == "Text size: 16 px")
 assert(BetterBeReadySizeSlider4Text.textValue == "Text size: 16 px")
 assert(BetterBeReadyTextSizeSlider1Text.textValue == "Text size: 16 px")
 assert(BetterBeReadyTextSizeSlider2Text.textValue == "Text size: 16 px")
+assert(BBR.configFrame.rows.bloodlust.enabled.Text:GetText() == "Show visuals")
 assert(BBR.configFrame.rows.bloodlust.textMode:GetChecked() == false)
+assert(BBR.configFrame.rows.bloodlust.musicEnabled:GetChecked() == true)
 
 for _, trackerKey in ipairs({ "bloodlust", "battleRes", "combatPotion", "combatTimer" }) do
     local enabledCheckbox = BBR.configFrame.rows[trackerKey].enabled
@@ -599,6 +606,16 @@ for _, trackerKey in ipairs({ "bloodlust", "battleRes", "combatPotion", "combatT
     assert(BetterBeReadyDB.trackers[trackerKey].enabled == true)
     assert(BBR.trackers[trackerKey].frame:IsShown())
 end
+
+-- The Bloodlust visuals and music use separate settings, allowing the music
+-- to play while the timer and icon are hidden.
+local bloodlustMusicEnabled = BBR.configFrame.rows.bloodlust.musicEnabled
+bloodlustMusicEnabled:SetChecked(false)
+bloodlustMusicEnabled.scripts.OnClick(bloodlustMusicEnabled)
+assert(BetterBeReadyDB.trackers.bloodlust.musicEnabled == false)
+bloodlustMusicEnabled:SetChecked(true)
+bloodlustMusicEnabled.scripts.OnClick(bloodlustMusicEnabled)
+assert(BetterBeReadyDB.trackers.bloodlust.musicEnabled == true)
 
 local function GetDropdownRadios(dropdown)
     local radios = {}
@@ -687,6 +704,19 @@ assert(auraSoundRegistrations[1].sound.soundFileName
 assert(auraSoundRegistrations[1].sound.outputChannel == "Master")
 assert(BBR.nativeBloodlustMusicAuraSoundActive == true)
 
+-- Hiding the Bloodlust visual must not unregister its aura-triggered music.
+BBR:SetTrackerEnabled("bloodlust", false)
+assert(not BBR.trackers.bloodlust.frame:IsShown())
+assert(BBR.nativeBloodlustMusicAuraSoundActive == true)
+BBR:SetTrackerEnabled("bloodlust", true)
+
+BBR:SetBloodlustMusicEnabled(false)
+assert(#removedAuraSoundIDs == bloodlustBuffCount)
+assert(BBR.nativeBloodlustMusicAuraSoundActive == false)
+BBR:SetBloodlustMusicEnabled(true)
+assert(#auraSoundRegistrations == bloodlustBuffCount * 2)
+assert(BBR.nativeBloodlustMusicAuraSoundActive == true)
+
 local playedBeforeNativeFallbackCheck = #playedSounds
 BBR.trackers.bloodlust:StartBloodlustMusic()
 assert(#playedSounds == playedBeforeNativeFallbackCheck)
@@ -694,7 +724,7 @@ assert(#playedSounds == playedBeforeNativeFallbackCheck)
 inCombatLockdown = true
 BBR:SetBloodlustMusicTrack("sounds\\DejaVuHero.ogg")
 assert(BBR.bloodlustMusicAuraSoundRefreshPending == true)
-assert(#removedAuraSoundIDs == 0)
+assert(#removedAuraSoundIDs == bloodlustBuffCount)
 
 inCombatLockdown = false
 BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(
@@ -702,13 +732,13 @@ BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(
     "PLAYER_REGEN_ENABLED"
 )
 assert(BBR.bloodlustMusicAuraSoundRefreshPending == false)
-assert(#removedAuraSoundIDs == bloodlustBuffCount)
-assert(#auraSoundRegistrations == bloodlustBuffCount * 2)
-assert(auraSoundRegistrations[bloodlustBuffCount + 1].sound.soundFileName
+assert(#removedAuraSoundIDs == bloodlustBuffCount * 2)
+assert(#auraSoundRegistrations == bloodlustBuffCount * 3)
+assert(auraSoundRegistrations[bloodlustBuffCount * 2 + 1].sound.soundFileName
     == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\DejaVuHero.ogg")
 
 BBR:SetBloodlustMusicTrack("")
-assert(#removedAuraSoundIDs == bloodlustBuffCount * 2)
+assert(#removedAuraSoundIDs == bloodlustBuffCount * 3)
 assert(BBR.nativeBloodlustMusicAuraSoundActive == false)
 assert(UISpecialFrames[1] == "BetterBeReadyConfigFrame")
 
