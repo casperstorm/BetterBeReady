@@ -190,7 +190,8 @@ function BBR:CreateConfig()
         row.title:SetPoint("TOPLEFT", 12, -10)
         row.title:SetText(rowInfo.title)
 
-        row.enabled = CreateCheckbox(row, "Enabled", 135, -4, function(checked)
+        local enabledLabel = trackerKey == "bloodlust" and "Show visuals" or "Enabled"
+        row.enabled = CreateCheckbox(row, enabledLabel, 135, -4, function(checked)
             BBR:SetTrackerEnabled(trackerKey, checked)
         end)
 
@@ -213,6 +214,9 @@ function BBR:CreateConfig()
         end
 
         if rowInfo.hasMusic then
+            row.musicEnabled = CreateCheckbox(row, "Enable music", 252, -40, function(checked)
+                BBR:SetBloodlustMusicEnabled(checked)
+            end)
             CreateLabel(row, "Music", 12, -91)
             row.musicDropdown = CreateMusicDropdown(row, trackerKey, 58, -78)
 
@@ -291,6 +295,9 @@ function BBR:RefreshConfig()
         end
         if row.musicDropdown then
             row.musicDropdown:SetText(self:GetBloodlustMusicTitle(settings.musicTrack))
+        end
+        if row.musicEnabled then
+            row.musicEnabled:SetChecked(settings.musicEnabled)
         end
 
         row.size.refreshing = true

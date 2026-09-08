@@ -1,7 +1,7 @@
 local now, plays, stopFails = 100, 0, false
 local overlaps = 0
 local liveSounds = {}
-local settings = { enabled = true, musicTrack = "sounds\\DejaVuHero.ogg" }
+local settings = { enabled = false, musicEnabled = true, musicTrack = "sounds\\DejaVuHero.ogg" }
 local BBR = { trackers = {} }
 function BBR:RegisterTracker(key, tracker)
     tracker.key = key
@@ -83,10 +83,10 @@ assert(next(liveSounds) == nil)
 -- Disabled/no-sound settings consume the current window without starting music;
 -- enabling or changing the track during that window must not restart it.
 now = 2200
-settings.enabled = false
+settings.musicEnabled = false
 tracker:UpdateBloodlustMusic(nil, "UNKNOWN", lockout(2200))
-settings.enabled = true
-tracker:OnEnabledChanged(true)
+settings.musicEnabled = true
+tracker:OnMusicEnabledChanged(true)
 tracker:UpdateBloodlustMusic(nil, "UNKNOWN", lockout(2200))
 assert(plays == 5)
 now = 2900

@@ -6,7 +6,7 @@ BBR.trackers = {}
 BBR.trackerOrder = {}
 
 local DEFAULTS = {
-    schemaVersion = 8,
+    schemaVersion = 9,
     locked = false,
     trackers = {
         bloodlust = {
@@ -16,6 +16,7 @@ local DEFAULTS = {
             textSize = 16,
             textMode = true,
             textAlignment = "LEFT",
+            musicEnabled = true,
             musicTrack = "sounds\\DejaVuHero.ogg",
             point = "CENTER",
             relativePoint = "CENTER",
@@ -252,6 +253,17 @@ function BBR:Initialize()
             combatTimer.size = 16
         end
         _G.BetterBeReadyDB.schemaVersion = 8
+    end
+    if databaseVersion < 9 then
+        local trackers = _G.BetterBeReadyDB.trackers
+        local bloodlust = trackers and trackers.bloodlust
+        if bloodlust and bloodlust.musicEnabled == nil then
+            -- Until version 9, disabling the tracker also disabled its music.
+            -- Retain that behavior for existing profiles; new profiles use the
+            -- independent music default above.
+            bloodlust.musicEnabled = bloodlust.enabled ~= false
+        end
+        _G.BetterBeReadyDB.schemaVersion = 9
     end
 
     ApplyDefaults(_G.BetterBeReadyDB, DEFAULTS)

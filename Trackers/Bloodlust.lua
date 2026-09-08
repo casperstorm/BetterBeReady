@@ -111,7 +111,7 @@ end
 
 function tracker:StartBloodlustMusic()
     local settings = BBR:GetTrackerSettings(self.key)
-    if not (settings and settings.enabled and settings.musicTrack ~= "") then
+    if not (settings and settings.musicEnabled and settings.musicTrack ~= "") then
         return
     end
     BBR:PlayBloodlustSound(settings.musicTrack, "bloodlust")
@@ -171,8 +171,8 @@ function tracker:OnMusicSelectionChanged()
     self:StopBloodlustMusic()
 end
 
-function tracker:OnEnabledChanged(enabled)
-    BBR:RefreshBloodlustMusicAuraSounds()
+function tracker:OnMusicEnabledChanged(enabled)
+    -- Enabling applies to the next lust; don't restart the current window.
     if not enabled then self:StopBloodlustMusic() end
 end
 

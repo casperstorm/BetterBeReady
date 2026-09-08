@@ -172,7 +172,7 @@ function BBR:RefreshBloodlustMusicAuraSounds()
     end
 
     local settings = self:GetTrackerSettings("bloodlust")
-    local track = settings and settings.enabled and self:GetBloodlustMusicTrack(settings.musicTrack)
+    local track = settings and settings.musicEnabled and self:GetBloodlustMusicTrack(settings.musicTrack)
     local trackID = track and track.id
     local tracker = self.trackers.bloodlust
     local desired = {}
@@ -241,6 +241,25 @@ function BBR:SetBloodlustMusicTrack(trackID)
     local tracker = self.trackers.bloodlust
     if tracker and tracker.OnMusicSelectionChanged then
         tracker:OnMusicSelectionChanged()
+    end
+    if self.RefreshConfig then
+        self:RefreshConfig()
+    end
+end
+
+function BBR:SetBloodlustMusicEnabled(enabled)
+    local settings = self:GetTrackerSettings("bloodlust")
+    if not settings then
+        return
+    end
+
+    settings.musicEnabled = enabled and true or false
+    self:StopBloodlustMusicPreview()
+    self:RefreshBloodlustMusicAuraSounds()
+
+    local tracker = self.trackers.bloodlust
+    if tracker and tracker.OnMusicEnabledChanged then
+        tracker:OnMusicEnabledChanged(settings.musicEnabled)
     end
     if self.RefreshConfig then
         self:RefreshConfig()
