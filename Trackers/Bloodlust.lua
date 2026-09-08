@@ -25,13 +25,10 @@ local tracker = {
         146555, -- Drums of Rage
         160452, -- Netherwinds
         178207, -- Drums of Fury
-        204276, -- Drums of Battle
         230935, -- Drums of the Mountain
         256740, -- Drums of the Maelstrom
         264667, -- Primal Rage
-        272678, -- Drums of Battle variant
-        275200, -- Drums of Battle variant
-        292686, -- Drums of the Maelstrom variant
+        292686, -- Mallet of Thunderous Skins
         309658, -- Drums of Deathly Ferocity
         381301, -- Feral Hide Drums
         390386, -- Fury of the Aspects
@@ -109,65 +106,74 @@ function tracker:SetActiveRainbow(enabled)
 end
 
 function tracker:StopBloodlustMusic()
-    if self.musicSoundHandle and StopSound then
-        pcall(StopSound, self.musicSoundHandle)
-    end
-    self.musicSoundHandle = nil
-    self.musicTrackPlaying = nil
+    BBR:StopBloodlustSound("bloodlust")
 end
 
 function tracker:StartBloodlustMusic()
-    if BBR.nativeBloodlustMusicAuraSoundActive then
-        return
-    end
-
     local settings = BBR:GetTrackerSettings(self.key)
     if not (settings and settings.enabled and settings.musicTrack ~= "") then
         return
     end
-
-    local track = BBR:GetBloodlustMusicTrack(settings.musicTrack)
-    if not (track and PlaySoundFile) then
-        return
-    end
-
-    local soundPath = "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\" .. track.id
-    local callOK, played, soundHandle = pcall(PlaySoundFile, soundPath, "Master")
-    if callOK and played then
-        self.musicSoundHandle = soundHandle
-        self.musicTrackPlaying = track.id
-    end
+    BBR:PlayBloodlustSound(settings.musicTrack, "bloodlust")
 end
 
-function tracker:SetBloodlustMusicActive(active)
-    if active then
-        if self.musicAuraActive then
-            return
-        end
-        self.musicAuraActive = true
-        self:StartBloodlustMusic()
-    else
-        self.musicAuraActive = false
+function tracker:ExpireBloodlustMusic()
+    if self.musicEndsAt and GetTime() >= self.musicEndsAt then
         self:StopBloodlustMusic()
     end
 end
 
-function tracker:OnMusicSelectionChanged()
-    self:StopBloodlustMusic()
-    if self.status == "ACTIVE" then
-        self.musicAuraActive = true
+local function ReadAuraTiming(aura)
+    local duration, durationReadable = BBR:GetReadableField(aura, "duration")
+    local expires, expiresReadable = BBR:GetReadableField(aura, "expirationTime")
+    if durationReadable and expiresReadable and type(duration) == "number"
+        and type(expires) == "number" and duration > 0 then
+        return expires - duration, expires
+    end
+end
+
+function tracker:UpdateBloodlustMusic(activeAura, activeState, lockoutAura)
+    if BBR.nativeBloodlustMusicMode then
+        if lockoutAura or activeState == "LOCKED" then BBR:StopBloodlustMusicPreview() end
+        return
+    end
+    local now = GetTime()
+    self:ExpireBloodlustMusic()
+    -- Absence is only conclusive when the aura query succeeded. Secret/unknown
+    -- aura data must not stop and re-arm music on every combat update.
+    if activeState == "READY" then self:StopBloodlustMusic() end
+
+    -- Lockout auras are readable in combat even when the haste buff is secret.
+    -- A newly applied lockout starts one bounded music window. Readable haste
+    -- auras also work where there is no lockout (e.g. special game modes).
+    local startedAt = ReadAuraTiming(lockoutAura)
+    local activeStartedAt, activeExpires = ReadAuraTiming(activeAura)
+    startedAt = startedAt or activeStartedAt
+    local initialized = self.musicInitialized
+    self.musicInitialized = true
+    if not startedAt then return end
+    if self.musicLastWindowStart and startedAt <= self.musicLastWindowStart + 3 then
+        return
+    end
+    if self.musicEndsAt and now < self.musicEndsAt then return end
+    self.musicLastWindowStart = startedAt
+    -- Do not replay an existing buff after login/reload or a temporary API error.
+    if not initialized or startedAt < now - 3 or startedAt > now then return end
+
+    self.musicEndsAt = math.min(startedAt + 40, activeExpires or (startedAt + 40))
+    if self.musicEndsAt > now then
         self:StartBloodlustMusic()
     end
 end
 
+function tracker:OnMusicSelectionChanged()
+    -- A selection applies to the next lust; preview has its own explicit button.
+    self:StopBloodlustMusic()
+end
+
 function tracker:OnEnabledChanged(enabled)
     BBR:RefreshBloodlustMusicAuraSounds()
-    if not enabled then
-        self:SetBloodlustMusicActive(false)
-    elseif self.status == "ACTIVE" then
-        self.musicAuraActive = false
-        self:SetBloodlustMusicActive(true)
-    end
+    if not enabled then self:StopBloodlustMusic() end
 end
 
 function tracker:RefreshTextStatus()
@@ -349,6 +355,14 @@ function tracker:PrintDebug()
         tostring(self.status),
         tostring(self.cooldownActive)
     ))
+    local registrationCount = 0
+    for _ in pairs(BBR.bloodlustMusicRegistrations or {}) do
+        registrationCount = registrationCount + 1
+    end
+    print(string.format("BetterBeReady music: mode=%s, registrations=%d, pending=%s, error=%s",
+        BBR.nativeBloodlustMusicMode and "native lockout" or "readable aura fallback",
+        registrationCount, tostring(BBR.bloodlustMusicAuraSoundRefreshPending),
+        BBR.bloodlustMusicRegistrationError or "none"))
 end
 
 function tracker:ApplySpellCooldownInfo(cooldownInfo)
@@ -455,7 +469,7 @@ function tracker:Update()
         self.frame.icon:SetVertexColor(0.55, 0.55, 0.55)
         self.frame.detail:SetText("")
         BBR:ClearTrackerCooldown(self)
-        self:SetBloodlustMusicActive(false)
+        self:ExpireBloodlustMusic()
         self:RefreshTextStatus()
         return
     end
@@ -464,19 +478,19 @@ function tracker:Update()
         return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
     end, self.bloodlustBuffSpellIDs)
 
+    local aura, state = BBR:FindFirstAuraBySpellID(function(spellID)
+        return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
+    end, self.lockoutSpellIDs)
+    self:UpdateBloodlustMusic(activeAura, activeState, aura)
+
     if activeState == "LOCKED" then
         self.status = "ACTIVE"
         self.frame.icon:SetVertexColor(0.25, 1, 0.35)
         self.frame.detail:SetText("")
         self:SetLockoutCooldown(activeAura)
-        self:SetBloodlustMusicActive(true)
         self:RefreshTextStatus()
         return
     end
-
-    local aura, state = BBR:FindFirstAuraBySpellID(function(spellID)
-        return C_UnitAuras.GetPlayerAuraBySpellID(spellID)
-    end, self.lockoutSpellIDs)
 
     if state == "READY" and activeState == "UNKNOWN" then
         state = "UNKNOWN"
@@ -504,7 +518,6 @@ function tracker:Update()
     end
 
     self.status = state
-    self:SetBloodlustMusicActive(false)
     self:RefreshTextStatus()
 end
 
@@ -534,6 +547,7 @@ function tracker:Create()
     self.eventFrame:RegisterEvent("PET_BAR_UPDATE")
     self.eventFrame:RegisterEvent("PET_BAR_UPDATE_COOLDOWN")
     self.eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    self.eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
     self.eventFrame:SetScript("OnEvent", function(_, event)
         if event == "SPELLS_CHANGED"
             or event == "UNIT_PET"
@@ -542,12 +556,19 @@ function tracker:Create()
         then
             self:SelectBloodlustSpell()
         end
-        if event == "PLAYER_REGEN_ENABLED" and BBR.bloodlustMusicAuraSoundRefreshPending then
+        if event == "PLAYER_REGEN_DISABLED" then
+            BBR:StopBloodlustMusicPreview()
+        elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_ENTERING_WORLD" then
             BBR:RefreshBloodlustMusicAuraSounds()
         end
         self:Update()
     end)
 
+    -- Independent of the visible tracker/rainbow, so hidden trackers and secret
+    -- aura reads cannot leave audio running indefinitely.
+    self.eventFrame:SetScript("OnUpdate", function()
+        self:ExpireBloodlustMusic()
+    end)
     BBR:RefreshBloodlustMusicAuraSounds()
     self:Update()
 end

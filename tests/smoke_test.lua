@@ -481,8 +481,8 @@ for _, spellID in ipairs(BBR.trackers.bloodlust.bloodlustBuffSpellIDs) do
     trackedBloodlustBuffs[spellID] = true
 end
 for _, spellID in ipairs({
-    2825, 32182, 80353, 90355, 146555, 160452, 178207, 204276,
-    230935, 256740, 264667, 272678, 275200, 292686, 309658, 381301,
+    2825, 32182, 80353, 90355, 146555, 160452, 178207,
+    230935, 256740, 264667, 292686, 309658, 381301,
     390386, 441076, 444257, 466904, 1243972,
 }) do
     assert(trackedBloodlustBuffs[spellID], "missing Bloodlust buff " .. spellID)
@@ -661,55 +661,58 @@ assert(BBR.musicPreviewSoundHandle == nil)
 BBR:SetBloodlustMusicTrack("")
 assert(#playedSounds == 2)
 
-local auraSoundRegistrations = {}
-local removedAuraSoundIDs = {}
-Enum = { UnitAuraSoundTrigger = { Added = 11 } }
-C_UnitAuras.AddAuraSound = function(trigger, sound)
-    auraSoundRegistrations[#auraSoundRegistrations + 1] = {
-        trigger = trigger,
-        sound = sound,
-    }
-    return 8000 + #auraSoundRegistrations
-end
-C_UnitAuras.RemoveAuraSound = function(auraSoundID)
-    removedAuraSoundIDs[#removedAuraSoundIDs + 1] = auraSoundID
-end
-
+-- Clients without native triggers retain single-handle playback from readable
+-- lockout data while the actual haste buff is secret.
 BBR:SetBloodlustMusicTrack("sounds\\GasHero.ogg")
-local bloodlustBuffCount = #BBR.trackers.bloodlust.bloodlustBuffSpellIDs
-assert(#auraSoundRegistrations == bloodlustBuffCount)
-assert(auraSoundRegistrations[1].trigger == Enum.UnitAuraSoundTrigger.Added)
-assert(auraSoundRegistrations[1].sound.unitToken == "player")
-assert(auraSoundRegistrations[1].sound.spellID
-    == BBR.trackers.bloodlust.bloodlustBuffSpellIDs[1])
-assert(auraSoundRegistrations[1].sound.soundFileName
-    == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\GasHero.ogg")
-assert(auraSoundRegistrations[1].sound.outputChannel == "Master")
-assert(BBR.nativeBloodlustMusicAuraSoundActive == true)
-
-local playedBeforeNativeFallbackCheck = #playedSounds
-BBR.trackers.bloodlust:StartBloodlustMusic()
-assert(#playedSounds == playedBeforeNativeFallbackCheck)
-
+inCombatLockdown = true
+now = 1000
+C_UnitAuras.GetPlayerAuraBySpellID = function(spellID)
+    if spellID == 57724 then
+        return { duration = 600, expirationTime = 1600 }
+    end
+    for _, lockoutID in ipairs(BBR.trackers.bloodlust.lockoutSpellIDs) do
+        if spellID == lockoutID then return nil end
+    end
+    error("secret haste aura")
+end
+BBR.trackers.bloodlust:Update()
+assert(#playedSounds == 3)
+for _ = 1, 100 do BBR.trackers.bloodlust:Update() end
+assert(#playedSounds == 3)
+now = 1040
+BBR.trackers.bloodlust.eventFrame.scripts.OnUpdate()
+assert(stoppedSounds[#stoppedSounds] == 7003)
+BBR.trackers.bloodlust:Update()
+assert(#playedSounds == 3)
+BBR:SetBloodlustMusicTrack("")
+-- Native registrations are installed on entering the world, and pending track
+-- changes are reconciled on leaving combat without adding duplicate listeners.
+local nativeSounds, nativeID = {}, 0
+Enum.UnitAuraSoundTrigger = { Added = 0 }
+C_UnitAuras.AddAuraSound = function(trigger, sound)
+    assert(trigger == 0)
+    nativeID = nativeID + 1
+    nativeSounds[nativeID] = sound
+    return nativeID
+end
+C_UnitAuras.RemoveAuraSound = function(id) nativeSounds[id] = nil end
+inCombatLockdown = false
+BBR:SetBloodlustMusicTrack("sounds\\GasHero.ogg")
+local registrationCount = #BBR.trackers.bloodlust.lockoutSpellIDs
+assert(nativeID == registrationCount)
+BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(nil, "PLAYER_ENTERING_WORLD")
+assert(nativeID == registrationCount)
 inCombatLockdown = true
 BBR:SetBloodlustMusicTrack("sounds\\DejaVuHero.ogg")
-assert(BBR.bloodlustMusicAuraSoundRefreshPending == true)
-assert(#removedAuraSoundIDs == 0)
-
+assert(BBR.bloodlustMusicAuraSoundRefreshPending)
+assert(nativeID == registrationCount)
 inCombatLockdown = false
-BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(
-    BBR.trackers.bloodlust.eventFrame,
-    "PLAYER_REGEN_ENABLED"
-)
-assert(BBR.bloodlustMusicAuraSoundRefreshPending == false)
-assert(#removedAuraSoundIDs == bloodlustBuffCount)
-assert(#auraSoundRegistrations == bloodlustBuffCount * 2)
-assert(auraSoundRegistrations[bloodlustBuffCount + 1].sound.soundFileName
-    == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\DejaVuHero.ogg")
-
+BBR.trackers.bloodlust.eventFrame.scripts.OnEvent(nil, "PLAYER_REGEN_ENABLED")
+assert(nativeID == registrationCount * 2)
+assert(not BBR.bloodlustMusicAuraSoundRefreshPending)
+assert(#playedSounds == 3)
 BBR:SetBloodlustMusicTrack("")
-assert(#removedAuraSoundIDs == bloodlustBuffCount * 2)
-assert(BBR.nativeBloodlustMusicAuraSoundActive == false)
+assert(next(nativeSounds) == nil)
 assert(UISpecialFrames[1] == "BetterBeReadyConfigFrame")
 
 inCombatLockdown = true

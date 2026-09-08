@@ -79,91 +79,154 @@ function BBR:GetBloodlustMusicTitle(trackID)
     return track and track.title or "No sound"
 end
 
-function BBR:StopBloodlustMusicPreview()
-    if self.musicPreviewSoundHandle and StopSound then
-        pcall(StopSound, self.musicPreviewSoundHandle)
+-- Automatic music and settings previews share one playback handle. Never lose
+-- that handle on a failed stop: starting another sound would create an overlap.
+function BBR:StopBloodlustSound(owner)
+    if owner and owner ~= self.musicSoundOwner then
+        return true
     end
+    if self.musicSoundHandle then
+        if not StopSound then return false end
+        local ok = pcall(StopSound, self.musicSoundHandle)
+        if not ok then return false end
+    end
+    self.musicSoundHandle = nil
+    self.musicSoundOwner = nil
+    self.musicSoundTrack = nil
     self.musicPreviewSoundHandle = nil
+    return true
+end
+
+function BBR:PlayBloodlustSound(trackID, owner)
+    -- Native triggers own automatic playback whenever supported. Never layer a
+    -- Lua-started song on top just because combat aura reads became available.
+    if owner == "bloodlust" and self.nativeBloodlustMusicMode then return end
+    local track = self:GetBloodlustMusicTrack(trackID)
+    if not (track and PlaySoundFile) then return end
+    if self.musicSoundHandle and self.musicSoundOwner == owner
+        and self.musicSoundTrack == trackID then
+        return
+    end
+    if not self:StopBloodlustSound() then return end
+
+    local ok, played, handle = pcall(PlaySoundFile, MUSIC_ROOT .. track.id, "Master")
+    if ok and played then
+        self.musicSoundHandle = handle
+        self.musicSoundOwner = owner
+        self.musicSoundTrack = trackID
+        if owner == "preview" then self.musicPreviewSoundHandle = handle end
+    end
+end
+
+function BBR:StopBloodlustMusicPreview()
+    self:StopBloodlustSound("preview")
 end
 
 function BBR:PreviewBloodlustMusic()
-    self:StopBloodlustMusicPreview()
-
-    local settings = self:GetTrackerSettings("bloodlust")
-    local track = settings and self:GetBloodlustMusicTrack(settings.musicTrack)
-    if not (track and PlaySoundFile) then
+    if self.nativeBloodlustMusicMode and not self:CanPreviewBloodlustMusic() then
+        print("BetterBeReady: Music preview is unavailable during combat or a possible active Bloodlust song.")
         return
     end
-
-    local soundPath = MUSIC_ROOT .. track.id
-    local callOK, played, soundHandle = pcall(PlaySoundFile, soundPath, "Master")
-    if callOK and played then
-        self.musicPreviewSoundHandle = soundHandle
-    end
+    local settings = self:GetTrackerSettings("bloodlust")
+    if settings then self:PlayBloodlustSound(settings.musicTrack, "preview") end
 end
 
-function BBR:ClearBloodlustMusicAuraSounds()
-    local removeSound = C_UnitAuras
-        and (C_UnitAuras.RemoveAuraSound or C_UnitAuras.RemoveAuraAppliedSound)
-    if removeSound then
-        for _, auraSoundID in ipairs(self.bloodlustMusicAuraSoundIDs or {}) do
-            pcall(removeSound, auraSoundID)
-        end
-    end
-
-    self.bloodlustMusicAuraSoundIDs = nil
-    self.nativeBloodlustMusicAuraSoundActive = false
+function BBR:CanPreviewBloodlustMusic()
+    if InCombatLockdown and InCombatLockdown() then return false end
+    local tracker = self.trackers.bloodlust
+    if not (tracker and C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then return false end
+    local aura, state = self:FindFirstAuraBySpellID(C_UnitAuras.GetPlayerAuraBySpellID, tracker.lockoutSpellIDs)
+    if state == "READY" then return true end
+    if state ~= "LOCKED" then return false end
+    local duration, durationReadable = self:GetReadableField(aura, "duration")
+    local expiration, expirationReadable = self:GetReadableField(aura, "expirationTime")
+    return durationReadable and expirationReadable
+        and type(duration) == "number" and type(expiration) == "number"
+        and GetTime() >= expiration - duration + 40
 end
 
 function BBR:RefreshBloodlustMusicAuraSounds()
+    local addSound = C_UnitAuras and C_UnitAuras.AddAuraSound
+    local removeSound = C_UnitAuras and C_UnitAuras.RemoveAuraSound
+    local trigger = Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added
+    if not (addSound and removeSound and trigger ~= nil) then
+        addSound = C_UnitAuras and C_UnitAuras.AddAuraAppliedSound
+        removeSound = C_UnitAuras and C_UnitAuras.RemoveAuraAppliedSound
+        trigger = nil
+    end
+    local registrations = self.bloodlustMusicRegistrations or {}
+    self.bloodlustMusicRegistrations = registrations
+    self.nativeBloodlustMusicMode = not not (addSound and removeSound or next(registrations))
+    if not self.nativeBloodlustMusicMode then return end
+
+    -- Stop anything we own before installing native triggers; their individual
+    -- playback handles are not exposed to Lua.
+    if not self:StopBloodlustSound() then
+        self.bloodlustMusicRegistrationError = "Could not stop existing playback"
+        self.bloodlustMusicAuraSoundRefreshPending = true
+        return
+    end
     if InCombatLockdown and InCombatLockdown() then
         self.bloodlustMusicAuraSoundRefreshPending = true
         return
     end
 
-    self.bloodlustMusicAuraSoundRefreshPending = false
-    self:ClearBloodlustMusicAuraSounds()
-
     local settings = self:GetTrackerSettings("bloodlust")
+    local track = settings and settings.enabled and self:GetBloodlustMusicTrack(settings.musicTrack)
+    local trackID = track and track.id
     local tracker = self.trackers.bloodlust
-    local track = settings and self:GetBloodlustMusicTrack(settings.musicTrack)
-    if not (settings and settings.enabled and tracker and track and C_UnitAuras) then
-        return
+    local desired = {}
+    if trackID and tracker then
+        -- One trigger per lockout, not per haste buff: haste buffs can be
+        -- refreshed/reapplied while the ten-minute lockout is already present.
+        for _, spellID in ipairs(tracker.lockoutSpellIDs) do desired[spellID] = true end
     end
 
-    local addSound = C_UnitAuras.AddAuraSound
-    local legacyAddSound = C_UnitAuras.AddAuraAppliedSound
-    local trigger = Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added
-    if not ((type(addSound) == "function" and trigger ~= nil)
-        or type(legacyAddSound) == "function")
-    then
-        return
-    end
-
-    local soundPath = MUSIC_ROOT .. track.id
-    local registrations = {}
-    for _, spellID in ipairs(tracker.bloodlustBuffSpellIDs) do
-        local sound = {
-            unitToken = "player",
-            spellID = spellID,
-            soundFileName = soundPath,
-            outputChannel = "Master",
-        }
-        local callOK, auraSoundID
-        if type(addSound) == "function" and trigger ~= nil then
-            callOK, auraSoundID = pcall(addSound, trigger, sound)
-        else
-            callOK, auraSoundID = pcall(legacyAddSound, sound)
-        end
-        if callOK and auraSoundID ~= nil then
-            registrations[#registrations + 1] = auraSoundID
+    local failed = false
+    self.bloodlustMusicRegistrationError = nil
+    for spellID, registration in pairs(registrations) do
+        if not desired[spellID] or registration.trackID ~= trackID then
+            local ok = pcall(registration.remove, registration.id)
+            if ok then
+                registrations[spellID] = nil
+            else
+                failed = true
+            end
         end
     end
-
-    if #registrations > 0 then
-        self.bloodlustMusicAuraSoundIDs = registrations
-        self.nativeBloodlustMusicAuraSoundActive = true
+    -- Keep failed handles, and don't add replacements until all stale triggers
+    -- are removed. Repeated refreshes cannot multiply registrations.
+    if failed then
+        self.bloodlustMusicRegistrationError = "Aura sound removal failed; retained handles for retry"
+        self.bloodlustMusicAuraSoundRefreshPending = true
+        return
     end
+    if addSound and removeSound then
+        for spellID in pairs(desired) do
+            if not registrations[spellID] then
+                local sound = {
+                    unitToken = "player", spellID = spellID,
+                    soundFileName = MUSIC_ROOT .. trackID, outputChannel = "Master",
+                }
+                local ok, id
+                if trigger ~= nil then
+                    ok, id = pcall(addSound, trigger, sound)
+                else
+                    ok, id = pcall(addSound, sound)
+                end
+                if ok and id ~= nil then
+                    registrations[spellID] = { id = id, trackID = trackID, remove = removeSound }
+                else
+                    failed = true
+                    self.bloodlustMusicRegistrationError = "Aura sound registration failed"
+                end
+            end
+        end
+    elseif next(desired) then
+        failed = true
+        self.bloodlustMusicRegistrationError = "Aura sound API unavailable"
+    end
+    self.bloodlustMusicAuraSoundRefreshPending = failed
 end
 
 function BBR:SetBloodlustMusicTrack(trackID)
