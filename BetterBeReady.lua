@@ -18,6 +18,7 @@ local DEFAULTS = {
             textAlignment = "LEFT",
             musicEnabled = true,
             musicTrack = "sounds\\DejaVuHero.ogg",
+            musicChannel = "Master",
             point = "CENTER",
             relativePoint = "CENTER",
             x = -90,
@@ -54,6 +55,20 @@ local DEFAULTS = {
             relativePoint = "CENTER",
             x = 180,
             y = 0,
+        },
+        movementCooldown = {
+            enabled = false,
+            showLabel = false,
+            size = 16,
+            textAlignment = "LEFT",
+            showName = false,
+            showDecimals = true,
+            combatOnly = false,
+            spells = {},
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 0,
+            y = -40,
         },
     },
 }
@@ -113,6 +128,9 @@ function BBR:SetLocked(locked)
     self.db.locked = locked and true or false
     for _, key in ipairs(self.trackerOrder) do
         local tracker = self.trackers[key]
+        if tracker.OnLockChanged then
+            tracker:OnLockChanged(self.db.locked)
+        end
         self:RefreshTrackerVisibility(tracker)
     end
     if self.RefreshConfig then

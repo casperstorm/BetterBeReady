@@ -1,7 +1,7 @@
 ## Interface: 120100
 ## Interface-Retail: 120100
 ## Title: BetterBeReady
-## Notes: Personal readiness trackers for Bloodlust, battle res charges, combat potions, and combat time
+## Notes: Personal readiness trackers for Bloodlust, battle res charges, combat potions, combat time, and movement cooldowns
 ## Author: casperstorm
 ## Version: @project-version@
 ## SavedVariables: BetterBeReadyDB
@@ -18,4 +18,5 @@ Trackers\Bloodlust.lua
 Trackers\BattleRes.lua
 Trackers\CombatPotion.lua
 Trackers\CombatTimer.lua
+Trackers\MovementCooldown.lua
 Config.lua

@@ -11,17 +11,18 @@ Made for Midnight.
 - **Battle res charges** — displays the encounter's shared battle-res count and native recharge countdown using the same Rebirth charge source used by MRT. It can be shown as the existing icon or as a compact text row (`1 | 01:02`), using `-` when no recharge is active. Text can be aligned left or right so the selected edge stays fixed.
 - **Combat potion** — scans the player's bags for current Midnight combat potions and displays `POT | READY`, the shared five-minute cooldown, or `POT | -` when none are available. It is always text-only and supports configurable text size and left/right alignment.
 - **Combat time** — starts on encounter start or when the player enters combat and stops after the encounter/combat ends. It uses a stable `m:ss` display (`0:00`).
+- **Movement cooldown** — optional, off by default. Shows a countdown until the current specialization's movement ability (Heroic Leap, Blink/Shimmer, Fel Rush, Wild Charge, and so on) is ready again, and nothing while it is ready. The spell list and combat-safe handling are ported from EllesmereUI's Movement Cooldown Alert: Blizzard's cooldown widget draws the number so secret combat timings still count down, charge spells only show once the last charge is spent, and short cross-ability lockouts are ignored. Tracked spells can be toggled per specialization; Sprint, Dash, Tiger Dash, Leap of Faith, Wraith Walk, Spirit Walk, Spiritwalker's Grace, and Stampeding Roar start unchecked. Options include only in combat, decimals, spell names, alignment, and text size.
 
 Each tracker can be enabled, moved, and resized independently, including during combat while unlocked. Icon and text sizes are configured separately, and the battle-res recharge time can be hidden.
-All four trackers use their text display and a 16 px font by default; Bloodlust and Battle res can still be switched to icons in settings.
+The Bloodlust, Battle res, Combat potion, and Combat time trackers use their text display and a 16 px font by default; Bloodlust and Battle res can still be switched to icons in settings.
 
-Bloodlust's Show visuals and Enable music settings are independent, so music can play with the timer and icon hidden. Music defaults to Dave Rodgers - Deja Vu, with 60 tracks and a No sound option. Blizzard's native sound API watches new Exhaustion/Sated-family lockouts, so playback does not depend on Lua reading secret aura timing. Refreshes of the haste buff do not retrigger this registration. Registrations are reused for unchanged settings; failed removals retain their handles and block replacements until cleanup succeeds. The addon never starts a second automatic playback path alongside native triggers.
+Bloodlust's Show visuals and Enable music settings are independent, so music can play with the timer and icon hidden. Music defaults to Dave Rodgers - Deja Vu, with 60 tracks and a No sound option. Music plays on the Master sound channel by default and can be switched to Music, Sound effects, Ambience, or Dialog so it follows that volume slider. Blizzard's native sound API watches new Exhaustion/Sated-family lockouts, so playback does not depend on Lua reading secret aura timing. Refreshes of the haste buff do not retrigger this registration. Registrations are reused for unchanged settings; failed removals retain their handles and block replacements until cleanup succeeds. The addon never starts a second automatic playback path alongside native triggers.
 
 Tracks are capped to 40 seconds. Native playback cannot be stopped early through the registration ID; changing the selection or disabling music affects future triggers. Settings changes during combat are applied on leaving combat. Play and Stop control settings previews, which are unavailable in combat or while native music might still be playing. Clients without the native sound API use guarded, single-handle playback when aura timing is readable.
 
 ## Usage
 
-Type `/bbr` or `/betterbeready` to open the configuration window.
+Type `/bbr` or `/betterbeready` to open the configuration window. Each tracker has its own section in the sidebar; General holds lock and position reset.
 
 Left-click any visible tracker to open the configuration window. When unlocked, dragging a tracker moves it without opening the window.
 

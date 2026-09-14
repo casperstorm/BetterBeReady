@@ -65,6 +65,26 @@ BBR.bloodlustMusicTracks = {
     { id = "sounds\\BurningNightHero.ogg", title = "2 Fast - Burning Up The Night" },
 }
 
+-- Sound channels accepted by PlaySoundFile and native aura sounds.
+BBR.bloodlustMusicChannels = {
+    { id = "Master", title = "Master" },
+    { id = "Music", title = "Music" },
+    { id = "SFX", title = "Sound effects" },
+    { id = "Ambience", title = "Ambience" },
+    { id = "Dialog", title = "Dialog" },
+}
+
+local channelsByID = {}
+for _, channel in ipairs(BBR.bloodlustMusicChannels) do
+    channelsByID[channel.id] = channel
+end
+
+function BBR:GetBloodlustMusicChannel()
+    local settings = self:GetTrackerSettings("bloodlust")
+    local channel = settings and settings.musicChannel
+    return channelsByID[channel] and channel or "Master"
+end
+
 local tracksByID = {}
 for _, track in ipairs(BBR.bloodlustMusicTracks) do
     tracksByID[track.id] = track
@@ -109,7 +129,7 @@ function BBR:PlayBloodlustSound(trackID, owner)
     end
     if not self:StopBloodlustSound() then return end
 
-    local ok, played, handle = pcall(PlaySoundFile, MUSIC_ROOT .. track.id, "Master")
+    local ok, played, handle = pcall(PlaySoundFile, MUSIC_ROOT .. track.id, self:GetBloodlustMusicChannel())
     if ok and played then
         self.musicSoundHandle = handle
         self.musicSoundOwner = owner
@@ -174,6 +194,7 @@ function BBR:RefreshBloodlustMusicAuraSounds()
     local settings = self:GetTrackerSettings("bloodlust")
     local track = settings and settings.musicEnabled and self:GetBloodlustMusicTrack(settings.musicTrack)
     local trackID = track and track.id
+    local channel = self:GetBloodlustMusicChannel()
     local tracker = self.trackers.bloodlust
     local desired = {}
     if trackID and tracker then
@@ -185,7 +206,7 @@ function BBR:RefreshBloodlustMusicAuraSounds()
     local failed = false
     self.bloodlustMusicRegistrationError = nil
     for spellID, registration in pairs(registrations) do
-        if not desired[spellID] or registration.trackID ~= trackID then
+        if not desired[spellID] or registration.trackID ~= trackID or registration.channel ~= channel then
             local ok = pcall(registration.remove, registration.id)
             if ok then
                 registrations[spellID] = nil
@@ -206,7 +227,7 @@ function BBR:RefreshBloodlustMusicAuraSounds()
             if not registrations[spellID] then
                 local sound = {
                     unitToken = "player", spellID = spellID,
-                    soundFileName = MUSIC_ROOT .. trackID, outputChannel = "Master",
+                    soundFileName = MUSIC_ROOT .. trackID, outputChannel = channel,
                 }
                 local ok, id
                 if trigger ~= nil then
@@ -215,7 +236,7 @@ function BBR:RefreshBloodlustMusicAuraSounds()
                     ok, id = pcall(addSound, sound)
                 end
                 if ok and id ~= nil then
-                    registrations[spellID] = { id = id, trackID = trackID, remove = removeSound }
+                    registrations[spellID] = { id = id, trackID = trackID, channel = channel, remove = removeSound }
                 else
                     failed = true
                     self.bloodlustMusicRegistrationError = "Aura sound registration failed"
@@ -242,6 +263,20 @@ function BBR:SetBloodlustMusicTrack(trackID)
     if tracker and tracker.OnMusicSelectionChanged then
         tracker:OnMusicSelectionChanged()
     end
+    if self.RefreshConfig then
+        self:RefreshConfig()
+    end
+end
+
+function BBR:SetBloodlustMusicChannel(channel)
+    local settings = self:GetTrackerSettings("bloodlust")
+    if not settings then
+        return
+    end
+
+    self:StopBloodlustMusicPreview()
+    settings.musicChannel = channelsByID[channel] and channel or "Master"
+    self:RefreshBloodlustMusicAuraSounds()
     if self.RefreshConfig then
         self:RefreshConfig()
     end

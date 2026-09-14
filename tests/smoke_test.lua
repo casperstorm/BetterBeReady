@@ -70,6 +70,16 @@ end
 function Widget:SetCooldown(startTime, duration, modRate)
     self.cooldownInfo = { startTime, duration, modRate }
 end
+function Widget:SetEnabled(enabled) self.enabled = enabled end
+function Widget:GetWidth() return self.width or 0 end
+function Widget:HookScript(name, callback) self.scripts[name] = callback end
+function Widget:Init(value)
+    self.value = value
+    self.Slider = setmetatable({ scripts = {}, events = {} }, Widget)
+end
+
+MinimalSliderWithSteppersMixin = { Label = { Right = 2 } }
+function CreateMinimalSliderFormatter() return noop end
 
 for _, method in ipairs({
     "SetWidth", "SetHeight", "SetMovable",
@@ -78,7 +88,8 @@ for _, method in ipairs({
     "SetDrawEdge", "SetSwipeColor",
     "SetJustifyH", "SetJustifyV", "SetTextColor", "SetFont", "SetFontObject", "SetShown", "SetFrameStrata",
     "SetBackdrop", "SetBackdropColor", "SetMinMaxValues", "SetValueStep",
-    "SetObeyStepOnDrag",
+    "SetObeyStepOnDrag", "SetAlpha", "SetDrawBling", "SetMinimumCountdownDuration",
+    "SetCountdownAbbrevThreshold", "SetCountdownMillisecondsThreshold", "GenerateMenu",
 }) do
     Widget[method] = Widget[method] or noop
 end
@@ -105,6 +116,9 @@ function CreateFrame(frameType, name, parent, template)
 end
 
 function GetTime() return now end
+function UnitClass() return "Warrior", "WARRIOR" end
+function GetSpecialization() return 1 end
+function GetSpecializationInfo() return 71 end
 function IsPlayerSpell(spellID) return spellID == 2825 end
 function InCombatLockdown() return inCombatLockdown end
 function PlaySoundFile(path, channel)
@@ -196,6 +210,7 @@ for _, file in ipairs({
     "Trackers/BattleRes.lua",
     "Trackers/CombatPotion.lua",
     "Trackers/CombatTimer.lua",
+    "Trackers/MovementCooldown.lua",
     "Config.lua",
 }) do
     local chunk = assert(loadfile(file))
@@ -229,6 +244,7 @@ assert(BetterBeReadyDB.trackers.combatPotion.size == 16)
 assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "LEFT")
 assert(BetterBeReadyDB.trackers.bloodlust.musicTrack == "sounds\\DejaVuHero.ogg")
 assert(BetterBeReadyDB.trackers.bloodlust.musicEnabled == true)
+assert(BetterBeReadyDB.trackers.bloodlust.musicChannel == "Master")
 assert(#BBR.bloodlustMusicTracks == 60)
 assert(BBR:GetBloodlustMusicTrack("customsongs\\Bruh.ogg") == nil)
 assert(BetterBeReadyDB.trackers.bloodlust.showLabel == false)
@@ -578,38 +594,47 @@ assert(BBR.trackers.combatTimer.frame.value.textValue == "1:05")
 
 BBR:ToggleConfig()
 assert(BBR.configFrame:IsShown())
-assert(BBR.configFrame.width == 600)
-assert(BBR.configFrame.height == 540)
-assert(BBR.configFrame.rows.bloodlust.width == 564)
-assert(BBR.configFrame.rows.bloodlust.height == 116)
-assert(BBR.configFrame.rows.battleRes.height == 116)
-assert(BBR.configFrame.rows.combatPotion.height == 72)
-assert(BBR.configFrame.rows.combatTimer.height == 72)
-assert(BetterBeReadySizeSlider1Text.textValue == "Icon size: 64 px")
-assert(BetterBeReadySizeSlider3Text.textValue == "Text size: 16 px")
-assert(BetterBeReadySizeSlider4Text.textValue == "Text size: 16 px")
-assert(BetterBeReadyTextSizeSlider1Text.textValue == "Text size: 16 px")
-assert(BetterBeReadyTextSizeSlider2Text.textValue == "Text size: 16 px")
-assert(BBR.configFrame.rows.bloodlust.enabled.Text:GetText() == "Show visuals")
-assert(BBR.configFrame.rows.bloodlust.textMode:GetChecked() == false)
-assert(BBR.configFrame.rows.bloodlust.musicEnabled:GetChecked() == true)
+assert(BBR.configFrame.width == 720)
+assert(BBR.configFrame.height == 500)
+assert(BBR.configFrame.activeTabId == "general")
+for _, tabID in ipairs({ "general", "bloodlust", "battleRes", "combatPotion", "combatTimer", "movementCooldown" }) do
+    assert(BBR.configFrame.tabButtons[tabID], "missing tab " .. tabID)
+    assert(BBR.configFrame.pages[tabID], "missing page " .. tabID)
+end
+BBR.configFrame.tabButtons.movementCooldown.scripts.OnClick()
+assert(BBR.configFrame.activeTabId == "movementCooldown")
+assert(BBR.configFrame.pages.movementCooldown.content:IsShown())
+assert(not BBR.configFrame.pages.general.content:IsShown())
+assert(BBR.configFrame.pages.general.lockButton:GetText() == "Unlock trackers")
+assert(BBR.configFrame.pages.bloodlust.size.value == 64)
+assert(BBR.configFrame.pages.bloodlust.textSize.value == 16)
+assert(BBR.configFrame.pages.combatPotion.size.value == 16)
+assert(BBR.configFrame.pages.combatTimer.size.value == 16)
+assert(BBR.configFrame.pages.bloodlust.enabled.Text:GetText() == "Show visuals")
+assert(BBR.configFrame.pages.bloodlust.textMode:GetChecked() == false)
+assert(BBR.configFrame.pages.bloodlust.musicEnabled:GetChecked() == true)
+BBR.configFrame.pages.bloodlust.size.Slider.scripts.OnValueChanged(nil, 80)
+assert(BetterBeReadyDB.trackers.bloodlust.size == 80)
+BBR:SetTrackerSize("bloodlust", 64)
 
 for _, trackerKey in ipairs({ "bloodlust", "battleRes", "combatPotion", "combatTimer" }) do
-    local enabledCheckbox = BBR.configFrame.rows[trackerKey].enabled
+    local enabledCheckbox = BBR.configFrame.pages[trackerKey].enabled
     enabledCheckbox:SetChecked(false)
     enabledCheckbox.scripts.OnClick(enabledCheckbox)
     assert(BetterBeReadyDB.trackers[trackerKey].enabled == false)
     assert(not BBR.trackers[trackerKey].frame:IsShown())
+    assert(BBR.configFrame.pages[trackerKey].size.container.enabled == false)
 
     enabledCheckbox:SetChecked(true)
     enabledCheckbox.scripts.OnClick(enabledCheckbox)
     assert(BetterBeReadyDB.trackers[trackerKey].enabled == true)
     assert(BBR.trackers[trackerKey].frame:IsShown())
+    assert(BBR.configFrame.pages[trackerKey].size.container.enabled == true)
 end
 
 -- The Bloodlust visuals and music use separate settings, allowing the music
 -- to play while the timer and icon are hidden.
-local bloodlustMusicEnabled = BBR.configFrame.rows.bloodlust.musicEnabled
+local bloodlustMusicEnabled = BBR.configFrame.pages.bloodlust.musicEnabled
 bloodlustMusicEnabled:SetChecked(false)
 bloodlustMusicEnabled.scripts.OnClick(bloodlustMusicEnabled)
 assert(BetterBeReadyDB.trackers.bloodlust.musicEnabled == false)
@@ -633,46 +658,54 @@ local function GetDropdownRadios(dropdown)
     return radios
 end
 
-assert(BBR.configFrame.rows.bloodlust.textAlignment:GetText() == "Left")
-local bloodlustAlignments = GetDropdownRadios(BBR.configFrame.rows.bloodlust.textAlignment)
+assert(BBR.configFrame.pages.bloodlust.textAlignment:GetText() == "Left")
+local bloodlustAlignments = GetDropdownRadios(BBR.configFrame.pages.bloodlust.textAlignment)
 assert(#bloodlustAlignments == 2)
 bloodlustAlignments[2].setSelected(bloodlustAlignments[2].value)
 assert(BetterBeReadyDB.trackers.bloodlust.textAlignment == "RIGHT")
-assert(BBR.configFrame.rows.bloodlust.textAlignment:GetText() == "Right")
+assert(BBR.configFrame.pages.bloodlust.textAlignment:GetText() == "Right")
 bloodlustAlignments[1].setSelected(bloodlustAlignments[1].value)
 assert(BetterBeReadyDB.trackers.bloodlust.textAlignment == "LEFT")
-assert(BBR.configFrame.rows.battleRes.textMode:GetChecked() == true)
-assert(BBR.configFrame.rows.battleRes.textAlignment:GetText() == "Left")
-local battleResAlignments = GetDropdownRadios(BBR.configFrame.rows.battleRes.textAlignment)
+assert(BBR.configFrame.pages.battleRes.textMode:GetChecked() == true)
+assert(BBR.configFrame.pages.battleRes.textAlignment:GetText() == "Left")
+local battleResAlignments = GetDropdownRadios(BBR.configFrame.pages.battleRes.textAlignment)
 battleResAlignments[2].setSelected(battleResAlignments[2].value)
 assert(BetterBeReadyDB.trackers.battleRes.textAlignment == "RIGHT")
-assert(BBR.configFrame.rows.battleRes.textAlignment:GetText() == "Right")
+assert(BBR.configFrame.pages.battleRes.textAlignment:GetText() == "Right")
 battleResAlignments[1].setSelected(battleResAlignments[1].value)
 assert(BetterBeReadyDB.trackers.battleRes.textAlignment == "LEFT")
-assert(BBR.configFrame.rows.combatPotion.textAlignment:GetText() == "Left")
-local combatPotionAlignments = GetDropdownRadios(BBR.configFrame.rows.combatPotion.textAlignment)
+assert(BBR.configFrame.pages.combatPotion.textAlignment:GetText() == "Left")
+local combatPotionAlignments = GetDropdownRadios(BBR.configFrame.pages.combatPotion.textAlignment)
 combatPotionAlignments[2].setSelected(combatPotionAlignments[2].value)
 assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "RIGHT")
-assert(BBR.configFrame.rows.combatPotion.textAlignment:GetText() == "Right")
+assert(BBR.configFrame.pages.combatPotion.textAlignment:GetText() == "Right")
 combatPotionAlignments[1].setSelected(combatPotionAlignments[1].value)
 assert(BetterBeReadyDB.trackers.combatPotion.textAlignment == "LEFT")
-assert(BBR.configFrame.rows.bloodlust.musicDropdown:GetText() == "No sound")
-local musicRadios = GetDropdownRadios(BBR.configFrame.rows.bloodlust.musicDropdown)
+assert(BBR.configFrame.pages.bloodlust.musicDropdown:GetText() == "No sound")
+local musicRadios = GetDropdownRadios(BBR.configFrame.pages.bloodlust.musicDropdown)
 assert(#musicRadios == 61)
 assert(musicRadios[1].title == "No sound")
 assert(musicRadios[1].value == "")
 musicRadios[2].setSelected(musicRadios[2].value)
 assert(BetterBeReadyDB.trackers.bloodlust.musicTrack == "sounds\\GasHero.ogg")
-assert(BBR.configFrame.rows.bloodlust.musicDropdown:GetText() == "Manuel - GAS GAS GAS")
-assert(BBR.configFrame.rows.bloodlust.musicPlayButton:GetText() == "Play")
-assert(BBR.configFrame.rows.bloodlust.musicStopButton:GetText() == "Stop")
-BBR.configFrame.rows.bloodlust.musicPlayButton.scripts.OnClick()
+assert(BBR.configFrame.pages.bloodlust.musicDropdown:GetText() == "Manuel - GAS GAS GAS")
+local channelRadios = GetDropdownRadios(BBR.configFrame.pages.bloodlust.musicChannel)
+assert(#channelRadios == 5)
+assert(channelRadios[1].value == "Master" and channelRadios[1].isSelected("Master"))
+channelRadios[2].setSelected(channelRadios[2].value)
+assert(BetterBeReadyDB.trackers.bloodlust.musicChannel == "Music")
+assert(BBR.configFrame.pages.bloodlust.musicChannel:GetText() == "Music")
+channelRadios[1].setSelected(channelRadios[1].value)
+assert(BetterBeReadyDB.trackers.bloodlust.musicChannel == "Master")
+assert(BBR.configFrame.pages.bloodlust.musicPlayButton:GetText() == "Play")
+assert(BBR.configFrame.pages.bloodlust.musicStopButton:GetText() == "Stop")
+BBR.configFrame.pages.bloodlust.musicPlayButton.scripts.OnClick()
 assert(#playedSounds == 2)
 assert(playedSounds[2].path
     == "Interface\\AddOns\\BetterBeReady\\Media\\BloodlustMusic\\sounds\\GasHero.ogg")
 assert(playedSounds[2].channel == "Master")
 assert(BBR.musicPreviewSoundHandle == 7002)
-BBR.configFrame.rows.bloodlust.musicStopButton.scripts.OnClick()
+BBR.configFrame.pages.bloodlust.musicStopButton.scripts.OnClick()
 assert(stoppedSounds[#stoppedSounds] == 7002)
 assert(BBR.musicPreviewSoundHandle == nil)
 BBR:SetBloodlustMusicTrack("")
@@ -744,6 +777,108 @@ assert(not BBR.bloodlustMusicAuraSoundRefreshPending)
 assert(#playedSounds == 3)
 BBR:SetBloodlustMusicTrack("")
 assert(next(nativeSounds) == nil)
+
+-- Movement cooldown: disabled by default and registers no events until enabled.
+local movement = BBR.trackers.movementCooldown
+local movementSettings = BetterBeReadyDB.trackers.movementCooldown
+assert(movementSettings.enabled == false)
+assert(not movement.frame:IsShown())
+assert(next(movement.eventFrame.events) == nil)
+
+IsPlayerSpell = function(spellID) return spellID == 6544 end
+GetSpellBaseCooldown = function(spellID) return spellID == 6544 and 45000 or 0 end
+C_Spell.GetSpellCharges = function() return nil end
+local movementCooldown = { startTime = 0, duration = 0, modRate = 1, isOnGCD = false }
+C_Spell.GetSpellCooldown = function() return movementCooldown end
+BBR:SetLocked(true)
+BBR:SetTrackerEnabled("movementCooldown", true)
+assert(movement.eventFrame.events.SPELL_UPDATE_COOLDOWN)
+assert(movement.eventFrame.events.UNIT_SPELLCAST_SUCCEEDED)
+assert(#movement.entries == 1)
+assert(movement.entries[1].spellID == 6544)
+assert(movement.entries[1].baseDuration == 45)
+assert(movement.activeSlotCount == 0)
+assert(not movement.frame:IsShown())
+
+-- A readable cooldown binds the Blizzard countdown and shows the tracker.
+movementCooldown.startTime, movementCooldown.duration = now, 45
+movement:Update()
+assert(movement.activeSlotCount == 1)
+assert(movement.frame:IsShown())
+assert(movement.slots[1]:IsShown())
+assert(movement.slots[1].cooldown.cooldownInfo[2] == 45)
+
+-- Short shared lockouts are not the ability's own cooldown.
+movementCooldown.duration = 2
+movement:Update()
+assert(movement.activeSlotCount == 0)
+assert(not movement.frame:IsShown())
+
+-- The GCD alone never counts as the movement cooldown.
+movementCooldown.duration, movementCooldown.isOnGCD = 45, true
+movement:Update()
+assert(movement.activeSlotCount == 0)
+movementCooldown.isOnGCD = false
+
+-- Secret combat timings are handed to the widget as a duration object.
+local secretDuration = {
+    GetRemainingDuration = function() return "secret" end,
+    GetTotalDuration = function() return "secret" end,
+}
+issecretvalue = function(value) return value == "secret" end
+movementCooldown.startTime, movementCooldown.duration = "secret", "secret"
+C_Spell.GetSpellCooldownDuration = function(_, ignoreGCD)
+    assert(ignoreGCD == true)
+    return secretDuration
+end
+local boundDuration
+Widget.SetCooldownFromDurationObject = function(_, duration) boundDuration = duration end
+movement:Update()
+assert(movement.activeSlotCount == 1)
+assert(boundDuration == secretDuration)
+issecretvalue = nil
+C_Spell.GetSpellCooldownDuration = nil
+Widget.SetCooldownFromDurationObject = nil
+movementCooldown.startTime, movementCooldown.duration = now, 45
+
+-- Only in combat hides the countdown outside combat.
+BBR:SetTrackerBooleanSetting("movementCooldown", "combatOnly", true)
+assert(movement.activeSlotCount == 0)
+movement:OnEvent("PLAYER_REGEN_DISABLED")
+movement.updateFrame.scripts.OnUpdate(movement.updateFrame)
+assert(movement.activeSlotCount == 1)
+movement:OnEvent("PLAYER_REGEN_ENABLED")
+movement.updateFrame.scripts.OnUpdate(movement.updateFrame)
+BBR:SetTrackerBooleanSetting("movementCooldown", "combatOnly", false)
+
+-- Nothing is written while the ability is ready, even when unlocked.
+movementCooldown.duration = 0
+BBR:SetLocked(false)
+assert(movement.frame:IsShown())
+assert(not movement.frame.value:IsShown())
+assert(movement.activeSlotCount == 0)
+BBR:SetLocked(true)
+assert(not movement.frame:IsShown())
+movementCooldown.duration = 45
+
+-- The settings page lists the spec's spells and toggles them.
+BBR:RefreshConfig()
+local movementPage = BBR.configFrame.pages.movementCooldown
+assert(movementPage.enabled:GetChecked() == true)
+assert(movementPage.spellCheckboxes[1].spellID == 6544)
+assert(movementPage.spellCheckboxes[1]:GetChecked() == true)
+movementPage.spellCheckboxes[1]:SetChecked(false)
+movementPage.spellCheckboxes[1].scripts.OnClick(movementPage.spellCheckboxes[1])
+assert(movementSettings.spells[6544] == false)
+assert(#movement.entries == 0)
+assert(movement.activeSlotCount == 0)
+movementPage.spellCheckboxes[1]:SetChecked(true)
+movementPage.spellCheckboxes[1].scripts.OnClick(movementPage.spellCheckboxes[1])
+assert(movement.activeSlotCount == 1)
+
+BBR:SetTrackerEnabled("movementCooldown", false)
+assert(next(movement.eventFrame.events) == nil)
+assert(not movement.frame:IsShown())
 assert(UISpecialFrames[1] == "BetterBeReadyConfigFrame")
 
 inCombatLockdown = true

@@ -1,6 +1,7 @@
 local now, plays, stopFails = 100, 0, false
 local overlaps = 0
 local liveSounds = {}
+local expectedChannel = "Master"
 local settings = { enabled = false, musicEnabled = true, musicTrack = "sounds\\DejaVuHero.ogg" }
 local BBR = { trackers = {} }
 function BBR:RegisterTracker(key, tracker)
@@ -10,7 +11,7 @@ end
 function BBR:GetTrackerSettings() return settings end
 function GetTime() return now end
 function PlaySoundFile(_, channel)
-    assert(channel == "Master")
+    assert(channel == expectedChannel)
     if next(liveSounds) then overlaps = overlaps + 1 end
     plays = plays + 1
     liveSounds[plays] = true
@@ -119,6 +120,19 @@ tracker:UpdateBloodlustMusic(nil, "UNKNOWN", lockout(5000))
 assert(plays == 6 and liveSounds[6])
 assert(overlaps == 0, "overlapping music playback")
 
+-- The chosen sound channel is used for playback; unknown values fall back to Master.
+BBR:SetBloodlustMusicChannel("Music")
+assert(settings.musicChannel == "Music")
+expectedChannel = "Music"
+BBR:PreviewBloodlustMusic()
+assert(plays == 7)
+BBR:StopBloodlustMusicPreview()
+BBR:SetBloodlustMusicChannel("Bogus")
+assert(settings.musicChannel == "Master")
+expectedChannel = "Master"
+assert(next(liveSounds) == nil)
+plays = 6 -- keep later play-count assertions independent of this preview
+
 -- Native mode works without readable aura data. Registrations only watch the
 -- lockout: repeated haste applications have no matching sound registration.
 local native, nativeAdds, nextRegistration = {}, 0, 0
@@ -181,6 +195,16 @@ assert(nativeAdds == expectedCount * 2)
 assert(triggersFor(57724) == 1)
 assert(not BBR.bloodlustMusicAuraSoundRefreshPending)
 for _, sound in pairs(native) do assert(sound.soundFileName:find("DejaVuHero", 1, true)) end
+
+-- Changing the channel replaces native registrations once, using the new channel.
+local addsBeforeChannel = nativeAdds
+BBR:SetBloodlustMusicChannel("SFX")
+assert(nativeAdds == addsBeforeChannel + expectedCount)
+assert(triggersFor(57724) == 1)
+for _, sound in pairs(native) do assert(sound.outputChannel == "SFX") end
+BBR:RefreshBloodlustMusicAuraSounds()
+assert(nativeAdds == addsBeforeChannel + expectedCount)
+BBR:SetBloodlustMusicChannel("Master")
 
 -- Failed removal on disable still retains handles and retries successfully.
 removalFails = true
